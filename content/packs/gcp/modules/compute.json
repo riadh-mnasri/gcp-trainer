@@ -1,0 +1,747 @@
+{
+  "id": "compute",
+  "title": { "en": "Compute options", "fr": "Options de calcul" },
+  "tagline": {
+    "en": "Compute Engine, GKE, Cloud Run, Functions: choosing",
+    "fr": "Compute Engine, GKE, Cloud Run, Functions : choisir"
+  },
+  "icon": "🖥️",
+  "lessons": [
+    {
+      "id": "compute-landscape",
+      "title": {
+        "en": "The compute spectrum: choosing a runtime",
+        "fr": "Le spectre du calcul : choisir un runtime"
+      },
+      "minutes": 5,
+      "blocks": [
+        {
+          "type": "text",
+          "body": {
+            "en": "GCP compute is a spectrum of decreasing operational control and increasing management by Google: Compute Engine (VMs), GKE Standard (you manage nodes), GKE Autopilot (Google manages nodes), Cloud Run (containers, request-driven), Cloud Run functions (event-driven code). App Engine still exists and is fine in legacy estates, but new serverless workloads land on Cloud Run.",
+            "fr": "Le calcul GCP est un spectre où le contrôle opérationnel décroît et la gestion par Google croît : Compute Engine (VM), GKE Standard (vous gérez les nœuds), GKE Autopilot (Google gère les nœuds), Cloud Run (conteneurs pilotés par les requêtes), Cloud Run functions (code événementiel). App Engine existe toujours et convient aux parcs legacy, mais les nouvelles charges serverless vont sur Cloud Run."
+          }
+        },
+        {
+          "type": "text",
+          "body": {
+            "en": "The interview-grade decision tree: need a specific kernel, GPU topology, license-bound software or long-lived stateful processes? Compute Engine. Already invested in Kubernetes APIs, operators, service mesh? GKE. Stateless HTTP/gRPC containers or jobs? Cloud Run, the default answer. Small event glue (a file lands, a message arrives)? Cloud Run functions. The strongest signal of seniority is defaulting to the most managed option that fits, not the most powerful.",
+            "fr": "L'arbre de décision niveau entretien : besoin d'un noyau précis, d'une topologie GPU, de logiciels sous licence ou de processus stateful longue durée ? Compute Engine. Déjà investi dans les API Kubernetes, operators, service mesh ? GKE. Conteneurs HTTP/gRPC stateless ou jobs ? Cloud Run, la réponse par défaut. Petite glu événementielle (un fichier arrive, un message tombe) ? Cloud Run functions. Le signal de séniorité le plus fort : choisir par défaut l'option la plus managée qui suffit, pas la plus puissante."
+          }
+        },
+        {
+          "type": "code",
+          "code": "# The 80% case: a stateless container in production in one command\ngcloud run deploy api \\\n  --image=europe-west1-docker.pkg.dev/my-app/repo/api:1.4.2 \\\n  --region=europe-west1 \\\n  --no-allow-unauthenticated",
+          "caption": {
+            "en": "No cluster, no nodes, no capacity planning: scale 0 to N managed for you.",
+            "fr": "Pas de cluster, pas de nœuds, pas de capacity planning : l'échelle 0 à N est gérée pour vous."
+          }
+        },
+        {
+          "type": "gotcha",
+          "body": {
+            "en": "Cloud Functions 2nd gen was rebranded as \"Cloud Run functions\" and runs on Cloud Run infrastructure. If a job description or an interviewer says \"Cloud Functions\", clarify the generation: gen1 has different limits, no concurrency (>1) per instance, and a separate console surface.",
+            "fr": "Cloud Functions 2e génération a été rebaptisé « Cloud Run functions » et tourne sur l'infrastructure Cloud Run. Si une fiche de poste ou un interviewer dit « Cloud Functions », clarifiez la génération : la gen1 a d'autres limites, pas de concurrence (>1) par instance, et une surface console séparée."
+          }
+        },
+        {
+          "type": "tip",
+          "body": {
+            "en": "\"Why not GKE for everything?\" is a classic interview probe. Good answer: Kubernetes buys flexibility at a permanent operational cost (upgrades, node pools, ingress, RBAC, cost management). If no one on the team will do that work weekly, Cloud Run delivers the same containers with an SLA and no cluster to babysit.",
+            "fr": "« Pourquoi pas GKE pour tout ? » est une sonde d'entretien classique. Bonne réponse : Kubernetes achète de la flexibilité contre un coût opérationnel permanent (upgrades, node pools, ingress, RBAC, maîtrise des coûts). Si personne dans l'équipe ne fera ce travail chaque semaine, Cloud Run livre les mêmes conteneurs avec un SLA et zéro cluster à surveiller."
+          }
+        }
+      ]
+    },
+    {
+      "id": "compute-engine",
+      "title": {
+        "en": "Compute Engine: families, spot, MIGs",
+        "fr": "Compute Engine : familles, spot, MIG"
+      },
+      "minutes": 5,
+      "blocks": [
+        {
+          "type": "text",
+          "body": {
+            "en": "Machine families encode the price/performance intent: E2 cost-optimized (no GPUs, no local SSD), N-series general purpose (balanced, the safe default), C-series compute-optimized (highest per-core performance), M-series memory-optimized (huge RAM), A-series accelerator-optimized (GPUs). Custom machine types let N-series VMs take non-standard CPU/RAM ratios instead of over-provisioning.",
+            "fr": "Les familles de machines encodent l'intention prix/performance : E2 optimisée coût (pas de GPU ni local SSD), série N usage général (équilibrée, le défaut sûr), série C optimisée calcul (meilleure perf par cœur), série M optimisée mémoire (RAM massive), série A optimisée accélérateurs (GPU). Les types personnalisés permettent aux N des ratios CPU/RAM non standards au lieu de surprovisionner."
+          }
+        },
+        {
+          "type": "text",
+          "body": {
+            "en": "Spot VMs are the same hardware at 60-91% off, but Compute Engine can preempt them at any moment with roughly 30 seconds of notice (an ACPI shutdown signal you can trap). They fit batch, CI runners, fault-tolerant workers; they do not fit anything a user is waiting on. Google-initiated maintenance, in contrast, is invisible for most VM types thanks to live migration.",
+            "fr": "Les spot VMs sont le même matériel avec 60-91 % de remise, mais Compute Engine peut les préempter à tout instant avec environ 30 secondes de préavis (signal d'arrêt ACPI interceptable). Elles conviennent au batch, aux runners CI, aux workers tolérants aux pannes ; pas à ce qu'un utilisateur attend. La maintenance initiée par Google, elle, est invisible pour la plupart des VM grâce à la live migration."
+          }
+        },
+        {
+          "type": "code",
+          "code": "gcloud compute instance-groups managed create api-mig \\\n  --region=europe-west1 \\\n  --template=api-template \\\n  --size=3 \\\n  --health-check=api-hc \\\n  --initial-delay=120",
+          "caption": {
+            "en": "A regional MIG spreads instances across zones and recreates unhealthy ones.",
+            "fr": "Un MIG régional répartit les instances entre zones et recrée celles en mauvaise santé."
+          }
+        },
+        {
+          "type": "gotcha",
+          "body": {
+            "en": "MIG autohealing kills and recreates any VM whose health check fails, including ones still booting if `--initial-delay` is shorter than real startup time. Symptom: an endless create/destroy loop that looks like flapping infrastructure. Measure cold boot (including startup scripts) before setting the delay.",
+            "fr": "L'autoréparation d'un MIG détruit et recrée toute VM dont le health check échoue, y compris celles encore en train de démarrer si `--initial-delay` est plus court que le vrai temps de boot. Symptôme : une boucle infinie de création/destruction qui ressemble à une infra instable. Mesurez le démarrage à froid (scripts compris) avant de fixer le délai."
+          }
+        },
+        {
+          "type": "tip",
+          "body": {
+            "en": "Stopping a VM stops the vCPU/RAM billing but persistent disks and reserved static IPs keep costing money — an idle static IP is even billed extra precisely to discourage hoarding. \"We turned everything off, why are we still paying?\" is almost always disks and addresses.",
+            "fr": "Arrêter une VM stoppe la facturation vCPU/RAM, mais les disques persistants et les IP statiques réservées continuent de coûter — une IP statique inutilisée est même surfacturée précisément pour décourager la thésaurisation. « On a tout éteint, pourquoi paie-t-on encore ? » : presque toujours les disques et les adresses."
+          }
+        }
+      ]
+    },
+    {
+      "id": "gke",
+      "title": {
+        "en": "GKE: Standard vs Autopilot",
+        "fr": "GKE : Standard vs Autopilot"
+      },
+      "minutes": 5,
+      "blocks": [
+        {
+          "type": "text",
+          "body": {
+            "en": "GKE Standard: you define node pools (machine types, sizes) and pay for the nodes whether pods use them or not; you tune the cluster autoscaler. Autopilot: no visible nodes, you pay per pod resource request, Google picks and scales the machines. Autopilot trades away daemonset freedom, privileged pods and exotic tuning for a radically smaller ops surface — the right default for most teams.",
+            "fr": "GKE Standard : vous définissez les node pools (types, tailles de machines) et payez les nœuds que les pods les utilisent ou non ; vous réglez l'autoscaler de cluster. Autopilot : pas de nœuds visibles, vous payez les requests des pods, Google choisit et fait évoluer les machines. Autopilot renonce aux daemonsets libres, aux pods privilégiés et aux réglages exotiques contre une surface d'exploitation radicalement réduite — le bon défaut pour la plupart des équipes."
+          }
+        },
+        {
+          "type": "text",
+          "body": {
+            "en": "Three autoscalers, three questions: HPA scales pod replicas on metrics (CPU, custom), VPA rewrites pod requests to fit reality, cluster autoscaler adds/removes nodes when pods are unschedulable. In Autopilot the third one is Google's problem. Regional clusters replicate the control plane across three zones — production clusters should be regional; zonal is for experiments.",
+            "fr": "Trois autoscalers, trois questions : le HPA ajuste le nombre de réplicas selon des métriques (CPU, custom), le VPA réécrit les requests des pods pour coller au réel, l'autoscaler de cluster ajoute/retire des nœuds quand des pods sont non planifiables. En Autopilot, le troisième est le problème de Google. Les clusters régionaux répliquent le plan de contrôle sur trois zones — la prod doit être régionale ; le zonal, c'est pour expérimenter."
+          }
+        },
+        {
+          "type": "code",
+          "code": "# Workload Identity: pods act as a GCP service account, no key files\nkubectl annotate serviceaccount api-ksa \\\n  iam.gke.io/gcp-service-account=api@my-app.iam.gserviceaccount.com\n\ngcloud iam service-accounts add-iam-policy-binding \\\n  api@my-app.iam.gserviceaccount.com \\\n  --role=roles/iam.workloadIdentityUser \\\n  --member=\"serviceAccount:my-app.svc.id.goog[prod/api-ksa]\"",
+          "caption": {
+            "en": "The Kubernetes SA is bound to the Google SA; tokens are minted on the fly.",
+            "fr": "Le SA Kubernetes est lié au SA Google ; les jetons sont émis à la volée."
+          }
+        },
+        {
+          "type": "gotcha",
+          "body": {
+            "en": "Exporting a service account key and mounting it as a Kubernetes secret still works and is still the wrong answer: keys never expire, leak into backups and repos, and bypass short-lived credential hygiene. Workload Identity is the expected answer to \"how do pods call GCP APIs?\" in any serious review.",
+            "fr": "Exporter une clé de compte de service et la monter en secret Kubernetes fonctionne toujours et reste la mauvaise réponse : les clés n'expirent jamais, fuient dans les sauvegardes et les dépôts, et contournent l'hygiène des identifiants éphémères. Workload Identity est la réponse attendue à « comment les pods appellent-ils les API GCP ? » dans toute revue sérieuse."
+          }
+        },
+        {
+          "type": "tip",
+          "body": {
+            "en": "GKE bills a flat management fee per cluster on top of compute, and every cluster you run adds an upgrade treadmill (three minor versions a year, forced within support windows). Consolidating on fewer, multi-tenant clusters with namespaces usually beats a cluster per team.",
+            "fr": "GKE facture des frais fixes de gestion par cluster en plus du compute, et chaque cluster ajoute un tapis roulant d'upgrades (trois versions mineures par an, imposées dans les fenêtres de support). Consolider sur moins de clusters multi-tenants avec des namespaces bat généralement le cluster par équipe."
+          }
+        }
+      ]
+    },
+    {
+      "id": "cloud-run",
+      "title": {
+        "en": "Cloud Run: scaling, concurrency, cold starts",
+        "fr": "Cloud Run : scaling, concurrence, cold starts"
+      },
+      "minutes": 5,
+      "blocks": [
+        {
+          "type": "text",
+          "body": {
+            "en": "A Cloud Run service scales on request pressure: instances are added when existing ones approach their concurrency limit (default 80 concurrent requests per instance, max 1000) and removed down to zero when idle. Concurrency is the tuning knob people forget: CPU-bound code wants low concurrency (even 1), I/O-bound APIs happily take the default.",
+            "fr": "Un service Cloud Run monte en charge selon la pression des requêtes : des instances s'ajoutent quand les existantes approchent leur limite de concurrence (80 requêtes simultanées par instance par défaut, 1000 max) et redescendent jusqu'à zéro à vide. La concurrence est le réglage qu'on oublie : le code CPU-bound veut une concurrence basse (voire 1), les API I/O-bound prennent volontiers le défaut."
+          }
+        },
+        {
+          "type": "text",
+          "body": {
+            "en": "By default, billing is per request and CPU is throttled to near zero between requests. Anything running outside a request (background threads, async flushes, metrics buffers) silently starves. Fixes: \"CPU always allocated\" (changes the billing model), Cloud Run jobs for batch work, or min-instances to keep warm capacity and absorb cold starts on latency-critical paths.",
+            "fr": "Par défaut, la facturation est à la requête et le CPU est bridé à presque zéro entre les requêtes. Tout ce qui tourne hors requête (threads d'arrière-plan, flushs asynchrones, buffers de métriques) s'asphyxie en silence. Remèdes : « CPU always allocated » (change le modèle de facturation), les jobs Cloud Run pour le batch, ou min-instances pour garder de la capacité chaude et absorber les cold starts sur les chemins critiques en latence."
+          }
+        },
+        {
+          "type": "code",
+          "code": "gcloud run services update api \\\n  --region=europe-west1 \\\n  --concurrency=40 \\\n  --min-instances=1 \\\n  --max-instances=20 \\\n  --cpu=1 --memory=512Mi",
+          "caption": {
+            "en": "min-instances trades a small constant cost against P99 latency.",
+            "fr": "min-instances échange un petit coût constant contre la latence P99."
+          }
+        },
+        {
+          "type": "gotcha",
+          "body": {
+            "en": "max-instances is not just a cost guard, it is a backpressure decision: when the ceiling is hit, requests queue briefly and then fail with 429. Undersize it and a traffic spike becomes an outage you configured yourself. Size it from load tests, and remember each instance may open its own database connections — 20 instances × 10 connections can exhaust a small Cloud SQL tier.",
+            "fr": "max-instances n'est pas qu'un garde-fou de coût, c'est une décision de backpressure : plafond atteint, les requêtes patientent brièvement puis échouent en 429. Sous-dimensionné, un pic de trafic devient une panne que vous avez configurée vous-même. Dimensionnez par tests de charge, et rappelez-vous que chaque instance ouvre ses propres connexions base — 20 instances × 10 connexions peuvent épuiser un petit palier Cloud SQL."
+          }
+        },
+        {
+          "type": "tip",
+          "body": {
+            "en": "Cold start checklist worth reciting: slim image, lazy-load heavy dependencies, min-instances on user-facing services, startup CPU boost, and for JVM workloads consider CRaC or native images. Measure with the startup latency metric before and after; guessing is not a strategy.",
+            "fr": "Check-list cold start à réciter : image légère, chargement paresseux des grosses dépendances, min-instances sur les services exposés aux utilisateurs, startup CPU boost, et pour la JVM envisager CRaC ou les images natives. Mesurez avec la métrique de latence de démarrage avant/après ; deviner n'est pas une stratégie."
+          }
+        }
+      ]
+    },
+    {
+      "id": "functions-appengine",
+      "title": {
+        "en": "Cloud Run functions & App Engine",
+        "fr": "Cloud Run functions & App Engine"
+      },
+      "minutes": 4,
+      "blocks": [
+        {
+          "type": "text",
+          "body": {
+            "en": "Cloud Run functions (ex Cloud Functions gen2) are source-based: you push a function, Google builds the container and wires the trigger. HTTP triggers cover webhooks and small APIs; event triggers arrive through Eventarc (Cloud Storage events, Pub/Sub messages, Audit Logs). Under the hood it is a Cloud Run service, with the same scaling model and knobs.",
+            "fr": "Les Cloud Run functions (ex Cloud Functions gen2) partent du source : vous poussez une fonction, Google construit le conteneur et branche le déclencheur. Les triggers HTTP couvrent webhooks et petites API ; les triggers événementiels arrivent via Eventarc (événements Cloud Storage, messages Pub/Sub, Audit Logs). Sous le capot, c'est un service Cloud Run, même modèle de scaling et mêmes réglages."
+          }
+        },
+        {
+          "type": "code",
+          "code": "gcloud functions deploy on-upload \\\n  --gen2 \\\n  --region=europe-west1 \\\n  --runtime=nodejs22 \\\n  --trigger-bucket=my-app-uploads \\\n  --entry-point=handleUpload",
+          "caption": {
+            "en": "Event-driven glue: a file lands in the bucket, the function fires.",
+            "fr": "Glu événementielle : un fichier arrive dans le bucket, la fonction se déclenche."
+          }
+        },
+        {
+          "type": "gotcha",
+          "body": {
+            "en": "Event delivery is at-least-once: your function will eventually receive duplicates, and Eventarc/Pub/Sub retries on failure can amplify them. Handlers must be idempotent — key side effects on the event ID or a natural business key, not on \"this will only run once\".",
+            "fr": "La livraison d'événements est at-least-once : votre fonction recevra tôt ou tard des doublons, et les retries d'Eventarc/Pub/Sub peuvent les amplifier. Les handlers doivent être idempotents — indexez les effets de bord sur l'ID d'événement ou une clé métier naturelle, pas sur « ça ne s'exécutera qu'une fois »."
+          }
+        },
+        {
+          "type": "text",
+          "body": {
+            "en": "App Engine reading grid for existing estates: Standard runs sandboxed language runtimes, scales to zero, deploys in seconds — many legacy apps still run there happily. Flexible runs containers on VMs, no scale to zero, slower deploys. For new builds both are superseded by Cloud Run; the realistic consulting scenario is maintaining or migrating an existing App Engine app, not choosing it.",
+            "fr": "Grille de lecture App Engine pour l'existant : Standard exécute des runtimes de langage sandboxés, descend à zéro, déploie en secondes — beaucoup d'applis legacy y tournent encore très bien. Flexible exécute des conteneurs sur VM, pas de scale à zéro, déploiements plus lents. Pour du neuf, les deux sont supplantés par Cloud Run ; le scénario réaliste en mission est de maintenir ou migrer une appli App Engine existante, pas de la choisir."
+          }
+        }
+      ]
+    }
+  ],
+  "flashcards": [
+    {
+      "id": "fc-decision-tree",
+      "front": {
+        "en": "Stateless HTTP container, team of 3, no K8s experience: which compute service and why?",
+        "fr": "Conteneur HTTP stateless, équipe de 3, aucune expérience K8s : quel service de calcul et pourquoi ?"
+      },
+      "back": {
+        "en": "Cloud Run: fully managed, scales 0 to N on request pressure, per-request billing, no cluster to operate. GKE would add a permanent ops burden nothing in the requirements justifies.",
+        "fr": "Cloud Run : entièrement managé, échelle 0 à N selon les requêtes, facturation à la requête, aucun cluster à exploiter. GKE ajouterait une charge d'exploitation permanente que rien dans le besoin ne justifie."
+      }
+    },
+    {
+      "id": "fc-machine-families",
+      "front": {
+        "en": "Match the Compute Engine families E2, C-series, M-series, A-series to their intent.",
+        "fr": "Associez les familles Compute Engine E2, série C, série M, série A à leur usage."
+      },
+      "back": {
+        "en": "E2: cost-optimized general purpose (no GPU/local SSD). C-series: compute-optimized, highest per-core performance. M-series: memory-optimized (huge RAM, e.g. SAP). A-series: accelerator-optimized, GPU workloads.",
+        "fr": "E2 : usage général optimisé coût (pas de GPU/local SSD). Série C : optimisée calcul, meilleure perf par cœur. Série M : optimisée mémoire (RAM massive, ex. SAP). Série A : optimisée accélérateurs, charges GPU."
+      }
+    },
+    {
+      "id": "fc-spot",
+      "front": {
+        "en": "Spot VMs: discount range, preemption notice, and two workloads that fit?",
+        "fr": "Spot VMs : fourchette de remise, préavis de préemption, et deux charges adaptées ?"
+      },
+      "back": {
+        "en": "60-91% off; ~30 seconds notice via ACPI shutdown signal. Good fits: batch processing, CI runners, fault-tolerant workers. Never for user-facing request paths.",
+        "fr": "60-91 % de remise ; ~30 secondes de préavis via signal d'arrêt ACPI. Adaptées : traitements batch, runners CI, workers tolérants aux pannes. Jamais pour un chemin utilisateur."
+      }
+    },
+    {
+      "id": "fc-live-migration",
+      "front": {
+        "en": "What is live migration on Compute Engine and when does it not apply?",
+        "fr": "Qu'est-ce que la live migration sur Compute Engine et quand ne s'applique-t-elle pas ?"
+      },
+      "back": {
+        "en": "Google moves a running VM to another host during maintenance with no reboot. Not available for spot VMs (preempted instead) and most GPU-attached instances (they get terminated/restarted per their maintenance policy).",
+        "fr": "Google déplace une VM en marche vers un autre hôte pendant la maintenance, sans redémarrage. Indisponible pour les spot VMs (préemptées) et la plupart des instances GPU (arrêtées/redémarrées selon leur politique de maintenance)."
+      }
+    },
+    {
+      "id": "fc-mig",
+      "front": {
+        "en": "What do you get from a regional managed instance group (MIG) that a zonal one lacks?",
+        "fr": "Qu'apporte un MIG régional qu'un MIG zonal n'a pas ?"
+      },
+      "back": {
+        "en": "Instances spread across multiple zones of the region: a zone outage removes only part of the fleet. Both give template-based creation, autohealing via health checks, autoscaling and rolling updates.",
+        "fr": "Des instances réparties sur plusieurs zones de la région : la panne d'une zone n'emporte qu'une partie de la flotte. Les deux offrent création par template, autoréparation via health checks, autoscaling et rolling updates."
+      }
+    },
+    {
+      "id": "fc-stopped-vm",
+      "front": {
+        "en": "A VM is stopped. What still generates charges?",
+        "fr": "Une VM est arrêtée. Qu'est-ce qui coûte encore ?"
+      },
+      "back": {
+        "en": "Persistent disks (billed on provisioned size) and reserved static IPs — an unused static IP is billed extra. vCPU and RAM stop billing. Local SSD data is lost on stop.",
+        "fr": "Les disques persistants (facturés à la taille provisionnée) et les IP statiques réservées — une IP statique inutilisée est surfacturée. vCPU et RAM ne coûtent plus. Les données du local SSD sont perdues à l'arrêt."
+      }
+    },
+    {
+      "id": "fc-autopilot",
+      "front": {
+        "en": "GKE Autopilot vs Standard: billing model and main restrictions?",
+        "fr": "GKE Autopilot vs Standard : modèle de facturation et principales restrictions ?"
+      },
+      "back": {
+        "en": "Autopilot bills per pod resource requests, nodes are invisible and managed by Google; restrictions on privileged pods, some daemonsets, node-level tuning. Standard bills the nodes you provision, used or not, with full control.",
+        "fr": "Autopilot facture les requests des pods, les nœuds sont invisibles et gérés par Google ; restrictions sur les pods privilégiés, certains daemonsets, le tuning au niveau nœud. Standard facture les nœuds provisionnés, utilisés ou non, avec contrôle total."
+      }
+    },
+    {
+      "id": "fc-three-autoscalers",
+      "front": {
+        "en": "HPA, VPA, cluster autoscaler: what does each one scale?",
+        "fr": "HPA, VPA, autoscaler de cluster : que fait évoluer chacun ?"
+      },
+      "back": {
+        "en": "HPA: the number of pod replicas, from CPU or custom metrics. VPA: the CPU/memory requests of pods. Cluster autoscaler: the number of nodes, when pods are unschedulable or nodes idle.",
+        "fr": "HPA : le nombre de réplicas de pods, d'après le CPU ou des métriques custom. VPA : les requests CPU/mémoire des pods. Autoscaler de cluster : le nombre de nœuds, quand des pods sont non planifiables ou des nœuds inutilisés."
+      }
+    },
+    {
+      "id": "fc-workload-identity",
+      "front": {
+        "en": "What is GKE Workload Identity and what does it replace?",
+        "fr": "Qu'est-ce que Workload Identity sur GKE et que remplace-t-il ?"
+      },
+      "back": {
+        "en": "A binding between a Kubernetes service account and a Google service account so pods get short-lived tokens to call GCP APIs. It replaces exported service account key files mounted as secrets — keys that never expire and leak.",
+        "fr": "Une liaison entre un compte de service Kubernetes et un compte de service Google : les pods obtiennent des jetons éphémères pour appeler les API GCP. Il remplace les fichiers de clés exportés montés en secrets — des clés qui n'expirent jamais et fuient."
+      }
+    },
+    {
+      "id": "fc-concurrency",
+      "front": {
+        "en": "Cloud Run concurrency: default value, maximum, and when to lower it?",
+        "fr": "Concurrence Cloud Run : valeur par défaut, maximum, et quand la baisser ?"
+      },
+      "back": {
+        "en": "Default 80 concurrent requests per instance, maximum 1000. Lower it (possibly to 1) for CPU-bound or memory-heavy work where parallel requests degrade each other; keep high for I/O-bound APIs.",
+        "fr": "80 requêtes simultanées par instance par défaut, 1000 maximum. Baissez-la (jusqu'à 1) pour du travail CPU-bound ou gourmand en mémoire où les requêtes parallèles se dégradent ; gardez-la haute pour les API I/O-bound."
+      }
+    },
+    {
+      "id": "fc-cpu-throttling",
+      "front": {
+        "en": "Why do background tasks die silently on default Cloud Run, and what are the fixes?",
+        "fr": "Pourquoi les tâches d'arrière-plan meurent-elles en silence sur Cloud Run par défaut, et quels remèdes ?"
+      },
+      "back": {
+        "en": "With request-based billing, CPU is throttled to near zero outside request handling. Fixes: \"CPU always allocated\" mode, Cloud Run jobs for batch, or moving the work into the request path / a task queue.",
+        "fr": "En facturation à la requête, le CPU est bridé à presque zéro hors traitement de requête. Remèdes : mode « CPU always allocated », jobs Cloud Run pour le batch, ou ramener le travail dans la requête / une file de tâches."
+      }
+    },
+    {
+      "id": "fc-min-max-instances",
+      "front": {
+        "en": "What do min-instances and max-instances each trade off on Cloud Run?",
+        "fr": "Quels compromis portent min-instances et max-instances sur Cloud Run ?"
+      },
+      "back": {
+        "en": "min-instances: constant warm capacity (cost) against cold-start latency. max-instances: cost/backpressure ceiling — once hit, excess requests queue then get 429, and each instance multiplies downstream connections.",
+        "fr": "min-instances : capacité chaude constante (coût) contre la latence de cold start. max-instances : plafond de coût/backpressure — atteint, les requêtes en excès patientent puis prennent 429, et chaque instance multiplie les connexions en aval."
+      }
+    },
+    {
+      "id": "fc-functions-gen2",
+      "front": {
+        "en": "What runs underneath Cloud Run functions (ex gen2), and how do non-HTTP events reach them?",
+        "fr": "Sur quoi tournent les Cloud Run functions (ex gen2), et comment les événements non HTTP leur parviennent-ils ?"
+      },
+      "back": {
+        "en": "They are Cloud Run services built from source. Non-HTTP events (Cloud Storage, Audit Logs, Pub/Sub) are routed by Eventarc, delivered at-least-once — handlers must be idempotent.",
+        "fr": "Ce sont des services Cloud Run construits depuis le source. Les événements non HTTP (Cloud Storage, Audit Logs, Pub/Sub) sont routés par Eventarc, livrés at-least-once — les handlers doivent être idempotents."
+      }
+    },
+    {
+      "id": "fc-appengine",
+      "front": {
+        "en": "App Engine Standard vs Flexible in one line each, and their place in 2026?",
+        "fr": "App Engine Standard vs Flexible en une ligne chacun, et leur place en 2026 ?"
+      },
+      "back": {
+        "en": "Standard: sandboxed runtimes, scales to zero, second-scale deploys. Flexible: containers on VMs, no scale to zero. Both are legacy-maintenance territory; new serverless workloads go to Cloud Run.",
+        "fr": "Standard : runtimes sandboxés, scale à zéro, déploiements en secondes. Flexible : conteneurs sur VM, pas de scale à zéro. Les deux relèvent de la maintenance d'existant ; le serverless neuf va sur Cloud Run."
+      }
+    }
+  ],
+  "exercises": [
+    {
+      "id": "ex-choose-runtime",
+      "kind": "mcq",
+      "prompt": {
+        "en": "A nightly job transcodes ~2000 videos (CPU-heavy, restartable per file, no deadline before morning). Cost matters. Best fit?",
+        "fr": "Un job nocturne transcode ~2000 vidéos (CPU intensif, reprenable fichier par fichier, aucune échéance avant le matin). Le coût compte. Meilleur choix ?"
+      },
+      "choices": [
+        {
+          "id": "a",
+          "label": {
+            "en": "Cloud Run service with max concurrency",
+            "fr": "Service Cloud Run avec concurrence max"
+          }
+        },
+        {
+          "id": "b",
+          "label": {
+            "en": "A MIG of spot VMs (or spot-backed batch), work pulled from a queue",
+            "fr": "Un MIG de spot VMs (ou batch sur spot), travail tiré d'une file"
+          }
+        },
+        {
+          "id": "c",
+          "label": {
+            "en": "GKE Autopilot with one pod per video",
+            "fr": "GKE Autopilot avec un pod par vidéo"
+          }
+        },
+        {
+          "id": "d",
+          "label": {
+            "en": "A large always-on N2 VM processing sequentially",
+            "fr": "Une grosse VM N2 allumée en permanence traitant en séquence"
+          }
+        }
+      ],
+      "answerId": "b",
+      "explanation": {
+        "en": "Restartable, deadline-free, CPU-heavy batch is the textbook spot workload: 60-91% off, and a preempted worker just returns its file to the queue. A Cloud Run service is request-shaped, not batch-shaped (jobs would be closer but spot compute is cheaper at this scale); Autopilot adds cluster machinery for nothing; an always-on VM wastes the elasticity.",
+        "fr": "Un batch reprenable, sans échéance, CPU intensif est LA charge spot d'école : 60-91 % de remise, un worker préempté rend juste son fichier à la file. Un service Cloud Run est taillé pour des requêtes, pas du batch (les jobs s'en rapprocheraient mais le spot est moins cher à cette échelle) ; Autopilot ajoute la machinerie cluster pour rien ; la VM permanente gaspille l'élasticité."
+      },
+      "difficulty": 2
+    },
+    {
+      "id": "ex-mig-loop",
+      "kind": "find-bug",
+      "prompt": {
+        "en": "This MIG endlessly destroys and recreates instances that never become healthy. The app takes about 3 minutes to boot (startup script installs dependencies). Find the bug.",
+        "fr": "Ce MIG détruit et recrée sans fin des instances qui ne deviennent jamais saines. L'appli met environ 3 minutes à démarrer (le script d'init installe des dépendances). Trouvez le bug."
+      },
+      "code": "gcloud compute instance-groups managed create api-mig \\\n  --region=europe-west1 \\\n  --template=api-template \\\n  --size=3 \\\n  --health-check=api-hc \\\n  --initial-delay=30",
+      "choices": [
+        {
+          "id": "a",
+          "label": {
+            "en": "--size=3 conflicts with a regional MIG",
+            "fr": "--size=3 est incompatible avec un MIG régional"
+          }
+        },
+        {
+          "id": "b",
+          "label": {
+            "en": "--initial-delay=30 is far below the ~180s boot time, so autohealing kills instances mid-startup",
+            "fr": "--initial-delay=30 est très inférieur aux ~180 s de boot, donc l'autoréparation tue les instances en plein démarrage"
+          }
+        },
+        {
+          "id": "c",
+          "label": {
+            "en": "A regional MIG cannot have a health check",
+            "fr": "Un MIG régional ne peut pas avoir de health check"
+          }
+        },
+        {
+          "id": "d",
+          "label": {
+            "en": "The template must embed the health check itself",
+            "fr": "Le template doit contenir lui-même le health check"
+          }
+        }
+      ],
+      "answerId": "b",
+      "explanation": {
+        "en": "initial-delay is the grace period before autohealing starts judging a new instance. At 30s, every instance is still installing dependencies when the health check fails, so the MIG recreates it, forever. Set the delay above worst-case boot (here 240-300s) — or better, bake dependencies into the image to shrink boot time.",
+        "fr": "initial-delay est le délai de grâce avant que l'autoréparation ne juge une nouvelle instance. À 30 s, chaque instance installe encore ses dépendances quand le health check échoue, donc le MIG la recrée, indéfiniment. Mettez le délai au-dessus du pire boot (ici 240-300 s) — ou mieux, cuisez les dépendances dans l'image pour raccourcir le démarrage."
+      },
+      "difficulty": 2
+    },
+    {
+      "id": "ex-idle-costs",
+      "kind": "mcq",
+      "prompt": {
+        "en": "A team stopped all dev VMs for the holidays but the project still bills ~40 EUR/month. Most likely cause?",
+        "fr": "Une équipe a arrêté toutes les VM de dev pour les vacances mais le projet facture encore ~40 EUR/mois. Cause la plus probable ?"
+      },
+      "choices": [
+        {
+          "id": "a",
+          "label": {
+            "en": "Stopped VMs still bill 20% of vCPU price",
+            "fr": "Les VM arrêtées facturent encore 20 % du prix vCPU"
+          }
+        },
+        {
+          "id": "b",
+          "label": {
+            "en": "Persistent disks and reserved static IPs of the stopped VMs",
+            "fr": "Les disques persistants et IP statiques réservées des VM arrêtées"
+          }
+        },
+        {
+          "id": "c",
+          "label": {
+            "en": "A minimum monthly project fee",
+            "fr": "Des frais mensuels minimums par projet"
+          }
+        },
+        {
+          "id": "d",
+          "label": {
+            "en": "Residual egress from before the stop",
+            "fr": "De l'egress résiduel d'avant l'arrêt"
+          }
+        }
+      ],
+      "answerId": "b",
+      "explanation": {
+        "en": "Stopping a VM ends vCPU/RAM billing, but provisioned persistent disk capacity keeps billing, and a reserved static IP not attached to a running VM bills extra by design. There is no per-project fee and no residual compute charge.",
+        "fr": "Arrêter une VM stoppe la facturation vCPU/RAM, mais la capacité de disque persistant provisionnée continue de facturer, et une IP statique réservée non rattachée à une VM en marche est surfacturée à dessein. Il n'y a ni frais par projet ni facturation résiduelle de compute."
+      },
+      "difficulty": 1
+    },
+    {
+      "id": "ex-autopilot-daemonset",
+      "kind": "mcq",
+      "prompt": {
+        "en": "During a GKE Autopilot migration, which existing component is most likely to require rework?",
+        "fr": "Lors d'une migration vers GKE Autopilot, quel composant existant risque le plus d'exiger une refonte ?"
+      },
+      "choices": [
+        {
+          "id": "a",
+          "label": {
+            "en": "A stateless Deployment with an HPA",
+            "fr": "Un Deployment stateless avec HPA"
+          }
+        },
+        {
+          "id": "b",
+          "label": {
+            "en": "A privileged monitoring agent DaemonSet that mounts host paths",
+            "fr": "Un DaemonSet d'agent de monitoring privilégié qui monte des chemins hôte"
+          }
+        },
+        {
+          "id": "c",
+          "label": {
+            "en": "A ClusterIP Service in front of pods",
+            "fr": "Un Service ClusterIP devant des pods"
+          }
+        },
+        {
+          "id": "d",
+          "label": {
+            "en": "A CronJob running nightly",
+            "fr": "Un CronJob nocturne"
+          }
+        }
+      ],
+      "answerId": "b",
+      "explanation": {
+        "en": "Autopilot restricts privileged pods, host path mounts and node-level access, exactly what old-school monitoring/security agents rely on; the managed alternatives (or vendor Autopilot-compatible builds) replace them. Standard Deployments, Services and CronJobs migrate untouched.",
+        "fr": "Autopilot restreint les pods privilégiés, les montages hostPath et l'accès au nœud, exactement ce dont dépendent les agents de monitoring/sécurité à l'ancienne ; les alternatives managées (ou les builds compatibles Autopilot des éditeurs) les remplacent. Deployments, Services et CronJobs standards migrent tels quels."
+      },
+      "difficulty": 2
+    },
+    {
+      "id": "ex-wi-bug",
+      "kind": "find-bug",
+      "prompt": {
+        "en": "Pods using this setup still get 403 from Cloud Storage. The Google SA has the right storage role. Find the missing piece.",
+        "fr": "Les pods avec cette configuration prennent toujours des 403 sur Cloud Storage. Le SA Google a le bon rôle storage. Trouvez la pièce manquante."
+      },
+      "code": "kubectl annotate serviceaccount api-ksa --namespace prod \\\n  iam.gke.io/gcp-service-account=api@my-app.iam.gserviceaccount.com\n# Google SA has roles/storage.objectViewer on the bucket\n# Pods' spec.serviceAccountName: api-ksa",
+      "choices": [
+        {
+          "id": "a",
+          "label": {
+            "en": "The annotation must be on the pod, not the service account",
+            "fr": "L'annotation doit être sur le pod, pas sur le compte de service"
+          }
+        },
+        {
+          "id": "b",
+          "label": {
+            "en": "The Google SA lacks the roles/iam.workloadIdentityUser binding for prod/api-ksa",
+            "fr": "Le SA Google n'a pas le binding roles/iam.workloadIdentityUser pour prod/api-ksa"
+          }
+        },
+        {
+          "id": "c",
+          "label": {
+            "en": "Workload Identity requires a key file mounted as a secret",
+            "fr": "Workload Identity exige une clé montée en secret"
+          }
+        },
+        {
+          "id": "d",
+          "label": {
+            "en": "objectViewer cannot be used with Workload Identity",
+            "fr": "objectViewer est incompatible avec Workload Identity"
+          }
+        }
+      ],
+      "answerId": "b",
+      "explanation": {
+        "en": "Workload Identity is a two-way handshake: the KSA annotation points to the Google SA, and the Google SA must authorize impersonation by granting roles/iam.workloadIdentityUser to member serviceAccount:PROJECT.svc.id.goog[prod/api-ksa]. Without that binding, token minting is refused regardless of the SA's storage roles.",
+        "fr": "Workload Identity est une poignée de main à double sens : l'annotation du KSA pointe vers le SA Google, et le SA Google doit autoriser l'impersonation en accordant roles/iam.workloadIdentityUser au membre serviceAccount:PROJET.svc.id.goog[prod/api-ksa]. Sans ce binding, l'émission de jetons est refusée quels que soient les rôles storage du SA."
+      },
+      "difficulty": 3
+    },
+    {
+      "id": "ex-run-throttle",
+      "kind": "predict-output",
+      "prompt": {
+        "en": "A default Cloud Run service (request-based billing) handles a request, returns 200 immediately, and schedules this. What actually happens to the log line?",
+        "fr": "Un service Cloud Run par défaut (facturation à la requête) traite une requête, répond 200 immédiatement, et programme ceci. Qu'advient-il réellement de la ligne de log ?"
+      },
+      "code": "app.post('/order', (req, res) => {\n  res.status(200).send('ok');\n  setTimeout(() => {\n    processOrderAsync(req.body);   // ~5s of CPU work\n    console.log('order processed');\n  }, 100);\n});",
+      "choices": [
+        {
+          "id": "a",
+          "label": {
+            "en": "Printed ~5s later, as in any Node.js server",
+            "fr": "Affichée ~5 s plus tard, comme sur tout serveur Node.js"
+          }
+        },
+        {
+          "id": "b",
+          "label": {
+            "en": "Rarely or never: after the response, CPU is throttled and the instance may be reclaimed mid-work",
+            "fr": "Rarement ou jamais : après la réponse, le CPU est bridé et l'instance peut être récupérée en plein travail"
+          }
+        },
+        {
+          "id": "c",
+          "label": {
+            "en": "Cloud Run rejects the deploy: setTimeout is forbidden",
+            "fr": "Cloud Run rejette le déploiement : setTimeout est interdit"
+          }
+        },
+        {
+          "id": "d",
+          "label": {
+            "en": "Printed immediately: Cloud Run runs timers before responding",
+            "fr": "Affichée immédiatement : Cloud Run exécute les timers avant de répondre"
+          }
+        }
+      ],
+      "answerId": "b",
+      "explanation": {
+        "en": "Once the response is sent, request-based billing throttles CPU to near zero, so the 5s of work crawls or never completes, and the idle instance can be shut down at any time. Correct designs: finish before responding, push to Cloud Tasks/Pub/Sub, use a Cloud Run job, or enable CPU always allocated.",
+        "fr": "Réponse envoyée, la facturation à la requête bride le CPU à presque zéro : les 5 s de travail rampent ou n'aboutissent jamais, et l'instance inactive peut être éteinte à tout moment. Bonnes conceptions : finir avant de répondre, pousser vers Cloud Tasks/Pub/Sub, utiliser un job Cloud Run, ou activer CPU always allocated."
+      },
+      "difficulty": 2
+    },
+    {
+      "id": "ex-max-instances",
+      "kind": "mcq",
+      "prompt": {
+        "en": "After a marketing campaign, a Cloud Run API returns bursts of 429s while its Cloud SQL database sits at 30% load. Config: concurrency=80, max-instances=3. Diagnosis?",
+        "fr": "Après une campagne marketing, une API Cloud Run renvoie des rafales de 429 alors que sa base Cloud SQL est à 30 % de charge. Config : concurrency=80, max-instances=3. Diagnostic ?"
+      },
+      "choices": [
+        {
+          "id": "a",
+          "label": {
+            "en": "Cloud SQL is the bottleneck",
+            "fr": "Cloud SQL est le goulot d'étranglement"
+          }
+        },
+        {
+          "id": "b",
+          "label": {
+            "en": "The max-instances ceiling is reached: beyond ~240 concurrent requests, excess traffic is rejected",
+            "fr": "Le plafond max-instances est atteint : au-delà de ~240 requêtes simultanées, l'excédent est rejeté"
+          }
+        },
+        {
+          "id": "c",
+          "label": {
+            "en": "429 means the container crashed",
+            "fr": "429 signifie que le conteneur a planté"
+          }
+        },
+        {
+          "id": "d",
+          "label": {
+            "en": "Concurrency 80 is too high for Node.js",
+            "fr": "Une concurrence de 80 est trop haute pour Node.js"
+          }
+        }
+      ],
+      "answerId": "b",
+      "explanation": {
+        "en": "Capacity is concurrency × max-instances = 80 × 3 = 240 concurrent requests. Beyond that, Cloud Run queues briefly then returns 429 — self-inflicted backpressure. The database being at 30% confirms the ceiling is upstream. Raise max-instances to a load-tested value while watching downstream connection counts.",
+        "fr": "La capacité est concurrence × max-instances = 80 × 3 = 240 requêtes simultanées. Au-delà, Cloud Run fait brièvement patienter puis renvoie 429 — backpressure auto-infligée. La base à 30 % confirme que le plafond est en amont. Remontez max-instances vers une valeur validée en test de charge, en surveillant les connexions en aval."
+      },
+      "difficulty": 2
+    },
+    {
+      "id": "ex-duplicate-events",
+      "kind": "mcq",
+      "prompt": {
+        "en": "A Cloud Run function triggered by bucket uploads occasionally bills a customer twice for the same file. What is the root cause and the fix?",
+        "fr": "Une Cloud Run function déclenchée par les uploads d'un bucket facture parfois deux fois un client pour le même fichier. Cause racine et correctif ?"
+      },
+      "choices": [
+        {
+          "id": "a",
+          "label": {
+            "en": "A GCS bug to report to support",
+            "fr": "Un bug GCS à signaler au support"
+          }
+        },
+        {
+          "id": "b",
+          "label": {
+            "en": "At-least-once delivery: make the handler idempotent, keyed on the event or object ID",
+            "fr": "Livraison at-least-once : rendre le handler idempotent, indexé sur l'ID d'événement ou d'objet"
+          }
+        },
+        {
+          "id": "c",
+          "label": {
+            "en": "Set max-instances=1 to serialize deliveries",
+            "fr": "Mettre max-instances=1 pour sérialiser les livraisons"
+          }
+        },
+        {
+          "id": "d",
+          "label": {
+            "en": "Switch to gen1 functions, which deliver exactly once",
+            "fr": "Passer en functions gen1, qui livrent exactement une fois"
+          }
+        }
+      ],
+      "answerId": "b",
+      "explanation": {
+        "en": "Eventarc and Pub/Sub guarantee at-least-once delivery: duplicates are normal, especially around retries. The contract is an idempotent handler — record the processed event/object generation in a transactional store and skip repeats. max-instances=1 reduces throughput without removing duplicates; no generation delivers exactly-once.",
+        "fr": "Eventarc et Pub/Sub garantissent une livraison at-least-once : les doublons sont normaux, surtout autour des retries. Le contrat est un handler idempotent — enregistrer l'événement/la génération d'objet traité dans un store transactionnel et ignorer les répétitions. max-instances=1 réduit le débit sans supprimer les doublons ; aucune génération ne livre exactly-once."
+      },
+      "difficulty": 2
+    }
+  ]
+}

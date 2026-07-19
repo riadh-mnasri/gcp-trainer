@@ -1,0 +1,113 @@
+/*
+ * Copyright (c) 2026 Riadh MNASRI. All rights reserved.
+ *
+ * Design tokens and global styles. Two themes (light and dark) driven by
+ * the data-theme attribute set on <html> before hydration (see layout).
+ * Identity: cool paper / deep slate, azure accent, green support.
+ */
+@import "tailwindcss";
+
+:root,
+:root[data-theme="light"] {
+  --background: #f3f5f8;
+  --surface: #ffffff;
+  --surface-2: #e9edf3;
+  --border: #d8dfe9;
+  --foreground: #1a222e;
+  --muted: #64748b;
+  --accent: #1a6fd4;
+  --accent-soft: #dcebfb;
+  --teal: #188055;
+  --teal-soft: #d8efe3;
+  --gold: #b7860b;
+  --danger: #c4453f;
+  --heat-0: #e3e9f1;
+  --heat-1: #b3d1f2;
+  --heat-2: #7fb0e8;
+  --heat-3: #4a8bd8;
+  --heat-4: #1a6fd4;
+}
+
+:root[data-theme="dark"] {
+  --background: #0e1319;
+  --surface: #161d26;
+  --surface-2: #1e2733;
+  --border: #2b3644;
+  --foreground: #e7ebf0;
+  --muted: #8c98a8;
+  --accent: #5aa2f0;
+  --accent-soft: #14304d;
+  --teal: #4ecf96;
+  --teal-soft: #103326;
+  --gold: #f2c94c;
+  --danger: #f07d78;
+  --heat-0: #1c2530;
+  --heat-1: #1d3a5c;
+  --heat-2: #275585;
+  --heat-3: #3a77b8;
+  --heat-4: #5aa2f0;
+}
+
+@theme inline {
+  --color-background: var(--background);
+  --color-surface: var(--surface);
+  --color-surface-2: var(--surface-2);
+  --color-border: var(--border);
+  --color-foreground: var(--foreground);
+  --color-muted: var(--muted);
+  --color-accent: var(--accent);
+  --color-accent-soft: var(--accent-soft);
+  --color-teal: var(--teal);
+  --color-teal-soft: var(--teal-soft);
+  --color-gold: var(--gold);
+  --color-danger: var(--danger);
+  --font-sans: var(--font-geist-sans);
+  --font-mono: var(--font-jetbrains-mono);
+}
+
+body {
+  background: var(--background);
+  color: var(--foreground);
+  font-family: var(--font-geist-sans), system-ui, sans-serif;
+}
+
+code,
+pre {
+  font-family: var(--font-jetbrains-mono), ui-monospace, monospace;
+}
+
+/* Flashcard flip animation */
+.flip-card {
+  perspective: 1200px;
+}
+.flip-card-inner {
+  transition: transform 0.45s cubic-bezier(0.2, 0.8, 0.25, 1);
+  transform-style: preserve-3d;
+}
+.flip-card.flipped .flip-card-inner {
+  transform: rotateX(180deg);
+}
+.flip-face {
+  backface-visibility: hidden;
+}
+.flip-back {
+  transform: rotateX(180deg);
+}
+
+/* Subtle pop for XP feedback */
+@keyframes pop-in {
+  0% {
+    transform: scale(0.7);
+    opacity: 0;
+  }
+  60% {
+    transform: scale(1.08);
+  }
+  100% {
+    transform: scale(1);
+    opacity: 1;
+  }
+}
+.pop-in {
+  animation: pop-in 0.35s ease-out both;
+}

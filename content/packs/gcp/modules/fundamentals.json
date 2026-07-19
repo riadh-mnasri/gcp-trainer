@@ -1,0 +1,723 @@
+{
+  "id": "fundamentals",
+  "title": { "en": "Platform fundamentals", "fr": "Fondamentaux de la plateforme" },
+  "tagline": {
+    "en": "Resource hierarchy, regions, gcloud, billing",
+    "fr": "Hiérarchie des ressources, régions, gcloud, facturation"
+  },
+  "icon": "🧭",
+  "lessons": [
+    {
+      "id": "resource-hierarchy",
+      "title": {
+        "en": "Resource hierarchy & IAM inheritance",
+        "fr": "Hiérarchie des ressources & héritage IAM"
+      },
+      "minutes": 5,
+      "blocks": [
+        {
+          "type": "text",
+          "body": {
+            "en": "Everything you create lives in a strict tree: Organization > Folders > Projects > Resources. The organization node requires Cloud Identity or Google Workspace; personal accounts only get standalone projects. The project is the unit of almost everything operational: API enablement, quotas, billing linkage, and the default trust boundary for service accounts.",
+            "fr": "Tout ce que vous créez vit dans un arbre strict : Organisation > Dossiers > Projets > Ressources. Le nœud organisation exige Cloud Identity ou Google Workspace ; les comptes personnels n'ont que des projets isolés. Le projet est l'unité de presque tout l'opérationnel : activation des API, quotas, rattachement de facturation, et frontière de confiance par défaut des comptes de service."
+          }
+        },
+        {
+          "type": "text",
+          "body": {
+            "en": "IAM allow policies are inherited downward: the effective policy on a resource is the union of the policies set on the resource and on every ancestor. You cannot remove a permission lower in the tree that was granted higher up (deny policies exist for that, but they are a separate, explicit mechanism). Practical consequence: grant broad roles at folder level only when you really mean every project below.",
+            "fr": "Les stratégies IAM d'autorisation s'héritent vers le bas : la politique effective d'une ressource est l'union des politiques posées sur la ressource et sur chacun de ses ancêtres. On ne peut pas retirer plus bas dans l'arbre une permission accordée plus haut (les deny policies existent pour cela, mais c'est un mécanisme séparé et explicite). Conséquence pratique : n'accordez un rôle large au niveau dossier que si vous visez vraiment tous les projets en dessous."
+          }
+        },
+        {
+          "type": "code",
+          "code": "gcloud projects describe my-app-prod\n# projectId: my-app-prod        <- chosen, immutable, globally unique\n# projectNumber: '731245789012' <- assigned by Google\n# name: My App Production       <- display name, freely editable",
+          "caption": {
+            "en": "Three identifiers per project; APIs use the ID or the number, never the name.",
+            "fr": "Trois identifiants par projet ; les API utilisent l'ID ou le numéro, jamais le nom."
+          }
+        },
+        {
+          "type": "gotcha",
+          "body": {
+            "en": "The project ID is immutable and globally unique across all of Google Cloud, and it leaks into public-facing names (default service accounts, Cloud Run URLs, storage domains). A typo or a company rename lives forever; pick a naming scheme before creating anything.",
+            "fr": "L'ID de projet est immuable et globalement unique sur tout Google Cloud, et il fuit dans des noms visibles (comptes de service par défaut, URL Cloud Run, domaines de stockage). Une faute de frappe ou un changement de nom d'entreprise reste pour toujours ; fixez une convention de nommage avant de créer quoi que ce soit."
+          }
+        },
+        {
+          "type": "tip",
+          "body": {
+            "en": "A deleted project enters a ~30-day pending deletion state during which it can be restored with `gcloud projects undelete`, but its ID stays reserved forever, even after purge. Use liens (`gcloud alpha resource-manager liens`) to protect critical projects from accidental deletion.",
+            "fr": "Un projet supprimé passe par ~30 jours d'attente pendant lesquels `gcloud projects undelete` peut le restaurer, mais son ID reste réservé pour toujours, même après purge. Utilisez les liens (`gcloud alpha resource-manager liens`) pour protéger les projets critiques d'une suppression accidentelle."
+          }
+        }
+      ]
+    },
+    {
+      "id": "regions-zones",
+      "title": {
+        "en": "Regions, zones & resource scope",
+        "fr": "Régions, zones & portée des ressources"
+      },
+      "minutes": 4,
+      "blocks": [
+        {
+          "type": "text",
+          "body": {
+            "en": "A region is an independent geographic area (europe-west1), a zone is an isolated failure domain inside it (europe-west1-b, at least three per region). Every resource has a scope: zonal (VM instances, persistent disks), regional (subnets, regional MIGs, Cloud Run services), global (VPC networks, images, HTTP(S) load balancers, IAM). Architecture reviews usually start here: what dies if a zone dies?",
+            "fr": "Une région est une zone géographique indépendante (europe-west1), une zone y est un domaine de panne isolé (europe-west1-b, au moins trois par région). Chaque ressource a une portée : zonale (VM, disques persistants), régionale (sous-réseaux, MIG régionaux, services Cloud Run), globale (réseaux VPC, images, load balancers HTTP(S), IAM). Les revues d'architecture commencent souvent là : que perd-on si une zone tombe ?"
+          }
+        },
+        {
+          "type": "code",
+          "code": "gcloud compute zones list --filter=\"region:europe-west1\"\n# NAME             REGION        STATUS\n# europe-west1-b   europe-west1  UP\n# europe-west1-c   europe-west1  UP\n# europe-west1-d   europe-west1  UP",
+          "caption": {
+            "en": "Zone suffixes are not aligned across projects: your -b is not my -b.",
+            "fr": "Les suffixes de zone ne coïncident pas entre projets : votre -b n'est pas mon -b."
+          }
+        },
+        {
+          "type": "gotcha",
+          "body": {
+            "en": "Zone names are mapped to physical clusters independently per project, to spread load. Two projects both using europe-west1-b may run in different physical facilities. Never design anything that assumes zone names match across projects.",
+            "fr": "Le mappage nom de zone vers cluster physique est fait indépendamment par projet, pour répartir la charge. Deux projets utilisant europe-west1-b peuvent tourner dans des installations physiques différentes. Ne concevez jamais rien qui suppose que les noms de zone coïncident entre projets."
+          }
+        },
+        {
+          "type": "text",
+          "body": {
+            "en": "Storage products add multi-regions (US, EU, ASIA): one bucket or dataset replicated across regions with a single endpoint. Choosing a region is a trade-off between user latency, price (regions differ noticeably), service availability (new products land in a few US regions first), carbon footprint, and data-residency constraints.",
+            "fr": "Les produits de stockage ajoutent les multi-régions (US, EU, ASIA) : un bucket ou dataset répliqué entre régions derrière un point d'accès unique. Choisir une région est un arbitrage entre latence utilisateur, prix (les régions diffèrent sensiblement), disponibilité des services (les nouveautés arrivent d'abord dans quelques régions US), empreinte carbone et contraintes de résidence des données."
+          }
+        },
+        {
+          "type": "tip",
+          "body": {
+            "en": "For a European product with no strong residency constraint, a common default is europe-west1 (Belgium) or europe-west4 (Netherlands): broad service coverage and better prices than europe-west9 (Paris). Check the per-service region list before committing, not after.",
+            "fr": "Pour un produit européen sans forte contrainte de résidence, le défaut courant est europe-west1 (Belgique) ou europe-west4 (Pays-Bas) : large couverture de services et prix meilleurs qu'europe-west9 (Paris). Vérifiez la liste des régions par service avant de vous engager, pas après."
+          }
+        }
+      ]
+    },
+    {
+      "id": "gcloud-cli",
+      "title": {
+        "en": "gcloud: configurations, auth & ADC",
+        "fr": "gcloud : configurations, auth & ADC"
+      },
+      "minutes": 5,
+      "blocks": [
+        {
+          "type": "text",
+          "body": {
+            "en": "gcloud state lives in named configurations: a bundle of account, project, default region/zone and other properties. `gcloud config configurations create client-a` then `activate` switches whole contexts at once, which is the sane way to juggle several clients or environments from one machine.",
+            "fr": "L'état de gcloud vit dans des configurations nommées : un lot compte + projet + région/zone par défaut + autres propriétés. `gcloud config configurations create client-a` puis `activate` bascule tout le contexte d'un coup, la façon saine de jongler entre plusieurs clients ou environnements sur une même machine."
+          }
+        },
+        {
+          "type": "code",
+          "code": "gcloud config configurations list\n# NAME      IS_ACTIVE  ACCOUNT                 PROJECT\n# client-a  True       riadh@client-a.example  client-a-prod\n# perso     False      riadh.mnasri@gmail.com  sandbox-riadh\n\ngcloud compute instances list --configuration=perso",
+          "caption": {
+            "en": "Any command can borrow another configuration without switching globally.",
+            "fr": "Toute commande peut emprunter une autre configuration sans bascule globale."
+          }
+        },
+        {
+          "type": "gotcha",
+          "body": {
+            "en": "`gcloud auth login` and `gcloud auth application-default login` are two different credential stores. The first drives the CLI itself; the second writes the Application Default Credentials (ADC) file that client libraries and Terraform pick up. Logging into one does nothing for the other, which explains most \"it works in gcloud but my code gets 403\" incidents.",
+            "fr": "`gcloud auth login` et `gcloud auth application-default login` sont deux magasins d'identifiants distincts. Le premier sert au CLI lui-même ; le second écrit le fichier Application Default Credentials (ADC) que lisent les bibliothèques clientes et Terraform. Se connecter à l'un ne fait rien pour l'autre, ce qui explique la plupart des incidents « ça marche dans gcloud mais mon code prend un 403 »."
+          }
+        },
+        {
+          "type": "text",
+          "body": {
+            "en": "ADC resolution order: the GOOGLE_APPLICATION_CREDENTIALS environment variable, then the local ADC file, then the attached service account of the runtime (VM, Cloud Run, GKE). In production you should almost never ship key files: rely on the attached identity, and locally prefer `--impersonate-service-account` to test with production-like permissions without any key.",
+            "fr": "Ordre de résolution ADC : la variable GOOGLE_APPLICATION_CREDENTIALS, puis le fichier ADC local, puis le compte de service attaché au runtime (VM, Cloud Run, GKE). En production, il ne faut presque jamais livrer de fichiers de clés : appuyez-vous sur l'identité attachée, et en local préférez `--impersonate-service-account` pour tester avec des permissions proches de la prod sans aucune clé."
+          }
+        },
+        {
+          "type": "tip",
+          "body": {
+            "en": "Learn `--filter` and `--format` once, save hours forever: `gcloud compute instances list --filter=\"status=RUNNING\" --format=\"value(name,zone)\"` gives clean, scriptable output. `--format=json` plus jq covers everything else.",
+            "fr": "Apprenez `--filter` et `--format` une fois, gagnez des heures pour toujours : `gcloud compute instances list --filter=\"status=RUNNING\" --format=\"value(name,zone)\"` donne une sortie propre et scriptable. `--format=json` plus jq couvre tout le reste."
+          }
+        }
+      ]
+    },
+    {
+      "id": "billing-costs",
+      "title": {
+        "en": "Billing, budgets & cost anatomy",
+        "fr": "Facturation, budgets & anatomie des coûts"
+      },
+      "minutes": 5,
+      "blocks": [
+        {
+          "type": "text",
+          "body": {
+            "en": "A billing account is a separate resource linked to projects (one billing account, many projects). Detach the link and every paid API in the project stops. Costs are attributed per project and per SKU; labels on resources flow into the billing data, which makes a disciplined labeling scheme (team, env, app) the cheapest FinOps tool you will ever deploy.",
+            "fr": "Un compte de facturation est une ressource séparée liée aux projets (un compte de facturation, plusieurs projets). Détachez le lien et toutes les API payantes du projet s'arrêtent. Les coûts sont ventilés par projet et par SKU ; les labels posés sur les ressources remontent dans les données de facturation, ce qui fait d'un étiquetage discipliné (équipe, env, appli) l'outil FinOps le moins cher que vous déploierez jamais."
+          }
+        },
+        {
+          "type": "gotcha",
+          "body": {
+            "en": "A budget does not cap spending. Budgets only send alerts (50%, 90%, 100% by default). If you need a hard stop, you must wire the budget's Pub/Sub notifications to your own function that unlinks billing, accepting that this kills the whole project. There is no built-in \"spend at most 100 EUR\" switch.",
+            "fr": "Un budget ne plafonne pas la dépense. Les budgets ne font qu'alerter (50 %, 90 %, 100 % par défaut). Pour un arrêt dur, il faut brancher les notifications Pub/Sub du budget sur votre propre fonction qui détache la facturation, en acceptant que cela tue tout le projet. Il n'existe pas d'interrupteur natif « dépense au plus 100 EUR »."
+          }
+        },
+        {
+          "type": "text",
+          "body": {
+            "en": "Network pricing in one sentence: ingress is free, egress is billed, and the rate depends on where traffic exits (same zone free on internal IPs, cross-zone and cross-region billed, internet egress the most expensive). Many \"mystery bills\" are chatty services placed in different zones or an unplanned NAT gateway.",
+            "fr": "La tarification réseau en une phrase : l'entrant est gratuit, le sortant est facturé, et le tarif dépend d'où sort le trafic (même zone gratuit en IP interne, inter-zone et inter-région facturés, sortie Internet la plus chère). Beaucoup de « factures mystères » sont des services bavards placés dans des zones différentes ou une passerelle NAT non anticipée."
+          }
+        },
+        {
+          "type": "code",
+          "code": "# Standard practice on day one of any engagement:\n# export billing to BigQuery, then SQL over your costs.\nbq query --use_legacy_sql=false '\nSELECT service.description, ROUND(SUM(cost), 2) AS eur\nFROM `finops.gcp_billing_export_v1_XXXXXX`\nWHERE usage_start_time >= TIMESTAMP_SUB(CURRENT_TIMESTAMP(), INTERVAL 30 DAY)\nGROUP BY 1 ORDER BY eur DESC LIMIT 10'",
+          "caption": {
+            "en": "The billing export to BigQuery is the source of truth; the console shows summaries.",
+            "fr": "L'export de facturation vers BigQuery est la source de vérité ; la console montre des résumés."
+          }
+        },
+        {
+          "type": "tip",
+          "body": {
+            "en": "Two discount families to know cold in interviews: committed use discounts (CUD, 1 or 3 years, up to ~57% on compute, you pay whether you use it or not) and spot VMs (60-91% off, preemptible at any time). Sustained use discounts still apply automatically to eligible Compute Engine usage, no action needed.",
+            "fr": "Deux familles de remises à connaître par cœur en entretien : les committed use discounts (CUD, 1 ou 3 ans, jusqu'à ~57 % sur le compute, payés utilisés ou non) et les spot VMs (60-91 % de remise, préemptibles à tout moment). Les remises d'usage soutenu s'appliquent toujours automatiquement à l'usage Compute Engine éligible, sans rien faire."
+          }
+        }
+      ]
+    },
+    {
+      "id": "apis-quotas",
+      "title": {
+        "en": "API enablement & quotas",
+        "fr": "Activation des API & quotas"
+      },
+      "minutes": 4,
+      "blocks": [
+        {
+          "type": "text",
+          "body": {
+            "en": "Every product is an API that must be enabled per project (`gcloud services enable run.googleapis.com`). A fresh project has only a handful enabled. Terraform providers and the console often enable APIs implicitly, which hides a real dependency: your infrastructure code should declare the APIs it needs, or the first run on a clean project fails.",
+            "fr": "Chaque produit est une API à activer par projet (`gcloud services enable run.googleapis.com`). Un projet neuf n'en a qu'une poignée d'activées. Les providers Terraform et la console activent souvent des API implicitement, ce qui masque une vraie dépendance : votre code d'infrastructure devrait déclarer les API nécessaires, sinon le premier run sur un projet propre échoue."
+          }
+        },
+        {
+          "type": "code",
+          "code": "gcloud services list --enabled --filter=\"name:compute\"\ngcloud compute regions describe europe-west1 \\\n  --format=\"table(quotas.metric,quotas.limit,quotas.usage)\"",
+          "caption": {
+            "en": "Quota usage is queryable; alert on it before users find the limit for you.",
+            "fr": "L'usage des quotas se consulte ; alertez dessus avant que les utilisateurs ne trouvent la limite à votre place."
+          }
+        },
+        {
+          "type": "text",
+          "body": {
+            "en": "Quotas come in two flavors: rate quotas (API requests per minute, reset continuously) and allocation quotas (number of CPUs, IPs, disks in a region, held while the resource exists). They are per project and usually per region. Increases go through a request form and can take days; treat quota as capacity planning, not an afterthought.",
+            "fr": "Les quotas existent en deux saveurs : quotas de débit (requêtes API par minute, remis à zéro en continu) et quotas d'allocation (nombre de CPU, d'IP, de disques dans une région, occupés tant que la ressource existe). Ils sont par projet et généralement par région. Les augmentations passent par un formulaire et peuvent prendre des jours ; traitez le quota comme de la planification de capacité, pas comme un détail."
+          }
+        },
+        {
+          "type": "gotcha",
+          "body": {
+            "en": "New projects start with a quota of zero for the expensive stuff: GPUs, TPUs, sometimes large machine types. The error you get is a quota error, not a permission error, and no amount of IAM will fix it. Request the increase early; approval is not instant and not guaranteed.",
+            "fr": "Les nouveaux projets démarrent avec un quota de zéro sur ce qui coûte cher : GPU, TPU, parfois les grosses machines. L'erreur obtenue est une erreur de quota, pas de permission, et aucun réglage IAM ne la corrigera. Demandez l'augmentation tôt ; l'approbation n'est ni instantanée ni garantie."
+          }
+        }
+      ]
+    }
+  ],
+  "flashcards": [
+    {
+      "id": "fc-hierarchy-levels",
+      "front": {
+        "en": "What are the four levels of the GCP resource hierarchy, top to bottom?",
+        "fr": "Quels sont les quatre niveaux de la hiérarchie de ressources GCP, de haut en bas ?"
+      },
+      "back": {
+        "en": "Organization > Folders > Projects > Resources. The organization requires Cloud Identity or Google Workspace; folders are optional grouping; the project is the operational unit (APIs, quotas, billing link).",
+        "fr": "Organisation > Dossiers > Projets > Ressources. L'organisation exige Cloud Identity ou Google Workspace ; les dossiers sont un regroupement optionnel ; le projet est l'unité opérationnelle (API, quotas, lien de facturation)."
+      }
+    },
+    {
+      "id": "fc-project-identifiers",
+      "front": {
+        "en": "Project ID vs project number vs project name: which is immutable, which is unique?",
+        "fr": "ID de projet vs numéro de projet vs nom de projet : lequel est immuable, lequel est unique ?"
+      },
+      "back": {
+        "en": "ID: chosen at creation, immutable, globally unique, reserved forever even after deletion. Number: assigned by Google, immutable, unique. Name: display only, freely editable, not unique.",
+        "fr": "ID : choisi à la création, immuable, globalement unique, réservé pour toujours même après suppression. Numéro : attribué par Google, immuable, unique. Nom : affichage seulement, modifiable, non unique."
+      }
+    },
+    {
+      "id": "fc-iam-inheritance",
+      "front": {
+        "en": "How is the effective IAM policy of a resource computed?",
+        "fr": "Comment est calculée la politique IAM effective d'une ressource ?"
+      },
+      "back": {
+        "en": "Union of the allow policies on the resource and on all its ancestors (project, folders, organization). A grant higher in the tree cannot be removed lower down; only explicit deny policies can override allows.",
+        "fr": "Union des politiques d'autorisation posées sur la ressource et sur tous ses ancêtres (projet, dossiers, organisation). Un droit accordé plus haut ne peut pas être retiré plus bas ; seules les deny policies explicites peuvent surpasser les allows."
+      }
+    },
+    {
+      "id": "fc-zonal-regional-global",
+      "front": {
+        "en": "Give one example each of a zonal, a regional and a global GCP resource.",
+        "fr": "Donnez un exemple de ressource GCP zonale, régionale et globale."
+      },
+      "back": {
+        "en": "Zonal: VM instance, persistent disk. Regional: subnet, Cloud Run service, regional MIG. Global: VPC network, custom image, external HTTP(S) load balancer, IAM policies.",
+        "fr": "Zonale : instance VM, disque persistant. Régionale : sous-réseau, service Cloud Run, MIG régional. Globale : réseau VPC, image personnalisée, load balancer HTTP(S) externe, politiques IAM."
+      }
+    },
+    {
+      "id": "fc-zone-mapping",
+      "front": {
+        "en": "Two projects both deploy in europe-west1-b. Same physical location?",
+        "fr": "Deux projets déploient tous deux en europe-west1-b. Même emplacement physique ?"
+      },
+      "back": {
+        "en": "Not necessarily: zone names are mapped to physical clusters independently per project to spread load. Never assume zone-name alignment across projects.",
+        "fr": "Pas nécessairement : le mappage nom de zone vers cluster physique est indépendant par projet, pour répartir la charge. Ne supposez jamais l'alignement des noms de zone entre projets."
+      }
+    },
+    {
+      "id": "fc-multiregion",
+      "front": {
+        "en": "What is a multi-region in GCP and which products use it?",
+        "fr": "Qu'est-ce qu'une multi-région GCP et quels produits l'utilisent ?"
+      },
+      "back": {
+        "en": "A large area (US, EU, ASIA) where data is replicated across several regions behind one endpoint, for higher availability. Used by storage products: Cloud Storage buckets, BigQuery datasets, Spanner multi-region configs.",
+        "fr": "Une grande zone (US, EU, ASIA) où les données sont répliquées entre plusieurs régions derrière un point d'accès unique, pour plus de disponibilité. Utilisée par les produits de stockage : buckets Cloud Storage, datasets BigQuery, configurations multi-régions Spanner."
+      }
+    },
+    {
+      "id": "fc-adc",
+      "front": {
+        "en": "What are Application Default Credentials and their resolution order?",
+        "fr": "Que sont les Application Default Credentials et leur ordre de résolution ?"
+      },
+      "back": {
+        "en": "The credential discovery mechanism used by client libraries: 1) GOOGLE_APPLICATION_CREDENTIALS env var, 2) local ADC file written by `gcloud auth application-default login`, 3) the attached service account of the runtime (VM, Cloud Run, GKE).",
+        "fr": "Le mécanisme de découverte d'identifiants des bibliothèques clientes : 1) variable GOOGLE_APPLICATION_CREDENTIALS, 2) fichier ADC local écrit par `gcloud auth application-default login`, 3) compte de service attaché au runtime (VM, Cloud Run, GKE)."
+      }
+    },
+    {
+      "id": "fc-two-logins",
+      "front": {
+        "en": "Why can gcloud commands succeed while your local app gets 403 from the same APIs?",
+        "fr": "Pourquoi gcloud peut-il réussir pendant que votre appli locale prend des 403 sur les mêmes API ?"
+      },
+      "back": {
+        "en": "Because `gcloud auth login` (CLI credentials) and `gcloud auth application-default login` (ADC used by client libraries) are separate stores. The app reads ADC, not the CLI's credentials.",
+        "fr": "Parce que `gcloud auth login` (identifiants du CLI) et `gcloud auth application-default login` (ADC lu par les bibliothèques) sont deux magasins séparés. L'appli lit l'ADC, pas les identifiants du CLI."
+      }
+    },
+    {
+      "id": "fc-configurations",
+      "front": {
+        "en": "How do you cleanly manage several clients/environments in gcloud on one machine?",
+        "fr": "Comment gérer proprement plusieurs clients/environnements gcloud sur une machine ?"
+      },
+      "back": {
+        "en": "Named configurations: `gcloud config configurations create|activate|list`, each holding account, project, default region/zone. One-off: `--configuration=name` or `--project=id` on any command.",
+        "fr": "Les configurations nommées : `gcloud config configurations create|activate|list`, chacune portant compte, projet, région/zone par défaut. Ponctuellement : `--configuration=nom` ou `--project=id` sur n'importe quelle commande."
+      }
+    },
+    {
+      "id": "fc-budget-cap",
+      "front": {
+        "en": "Does a GCP budget stop spending when it is exceeded?",
+        "fr": "Un budget GCP arrête-t-il la dépense quand il est dépassé ?"
+      },
+      "back": {
+        "en": "No. Budgets only alert (thresholds at 50/90/100% by default). A hard stop requires wiring budget Pub/Sub notifications to custom code that unlinks the billing account, which shuts down the whole project.",
+        "fr": "Non. Les budgets ne font qu'alerter (seuils 50/90/100 % par défaut). Un arrêt dur exige de brancher les notifications Pub/Sub du budget sur du code maison qui détache le compte de facturation, ce qui éteint tout le projet."
+      }
+    },
+    {
+      "id": "fc-egress",
+      "front": {
+        "en": "The one-sentence rule for GCP network pricing?",
+        "fr": "La règle en une phrase de la tarification réseau GCP ?"
+      },
+      "back": {
+        "en": "Ingress is free, egress is billed by exit distance: same-zone internal free, cross-zone and cross-region billed, internet egress the most expensive. Co-locate chatty services.",
+        "fr": "L'entrant est gratuit, le sortant est facturé selon la distance de sortie : même zone en interne gratuit, inter-zone et inter-région facturés, sortie Internet la plus chère. Co-localisez les services bavards."
+      }
+    },
+    {
+      "id": "fc-discounts",
+      "front": {
+        "en": "CUD vs spot VMs: the trade-off of each discount family?",
+        "fr": "CUD vs spot VMs : le compromis de chaque famille de remise ?"
+      },
+      "back": {
+        "en": "Committed use discounts: up to ~57% for a 1/3-year commitment, paid whether used or not — for stable baseline load. Spot VMs: 60-91% off but preemptible at any time with ~30s notice — for fault-tolerant batch.",
+        "fr": "Committed use discounts : jusqu'à ~57 % contre un engagement 1/3 ans, payé utilisé ou non — pour la charge de base stable. Spot VMs : 60-91 % de remise mais préemptibles à tout moment avec ~30 s de préavis — pour le batch tolérant aux pannes."
+      }
+    },
+    {
+      "id": "fc-billing-export",
+      "front": {
+        "en": "What is the recommended source of truth for analyzing GCP costs?",
+        "fr": "Quelle est la source de vérité recommandée pour analyser les coûts GCP ?"
+      },
+      "back": {
+        "en": "The billing export to BigQuery (detailed usage cost table), queried with SQL and sliced by project, service, SKU and labels. The console cost pages are summaries on top of it.",
+        "fr": "L'export de facturation vers BigQuery (table de coûts détaillée), interrogé en SQL et découpé par projet, service, SKU et labels. Les pages de coûts de la console sont des résumés par-dessus."
+      }
+    },
+    {
+      "id": "fc-quota-types",
+      "front": {
+        "en": "Rate quota vs allocation quota: difference and one example of each?",
+        "fr": "Quota de débit vs quota d'allocation : différence et un exemple de chaque ?"
+      },
+      "back": {
+        "en": "Rate quotas limit request throughput and reset continuously (API requests/minute). Allocation quotas cap resources held in existence (CPUs or in-use IPs per region) and free up only when the resource is deleted.",
+        "fr": "Les quotas de débit limitent le flux de requêtes et se réinitialisent en continu (requêtes API/minute). Les quotas d'allocation plafonnent les ressources existantes (CPU ou IP utilisées par région) et ne se libèrent qu'à la suppression de la ressource."
+      }
+    }
+  ],
+  "exercises": [
+    {
+      "id": "ex-hierarchy-grant",
+      "kind": "mcq",
+      "prompt": {
+        "en": "A developer was granted roles/editor on folder \"engineering\", which contains projects dev, staging and prod. The security team wants to remove their write access on prod only. What is the correct statement?",
+        "fr": "Un développeur a reçu roles/editor sur le dossier « engineering », qui contient les projets dev, staging et prod. L'équipe sécurité veut retirer son accès en écriture sur prod uniquement. Quelle affirmation est correcte ?"
+      },
+      "choices": [
+        {
+          "id": "a",
+          "label": {
+            "en": "Remove the role on the prod project's IAM policy",
+            "fr": "Retirer le rôle dans la politique IAM du projet prod"
+          }
+        },
+        {
+          "id": "b",
+          "label": {
+            "en": "The folder-level grant cannot be revoked from below; restructure the grant or use a deny policy",
+            "fr": "Le droit posé au niveau dossier ne peut pas être révoqué d'en dessous ; restructurer le droit ou utiliser une deny policy"
+          }
+        },
+        {
+          "id": "c",
+          "label": {
+            "en": "Set the project's IAM policy to \"private\" to break inheritance",
+            "fr": "Passer la politique IAM du projet en « privée » pour casser l'héritage"
+          }
+        },
+        {
+          "id": "d",
+          "label": {
+            "en": "Move prod out of the organization",
+            "fr": "Sortir prod de l'organisation"
+          }
+        }
+      ],
+      "answerId": "b",
+      "explanation": {
+        "en": "Allow policies are additive down the tree: the effective policy is the union of ancestor policies, and there is nothing to \"remove\" on the project since the binding lives on the folder. The clean fix is granting per-project instead, or an explicit IAM deny policy for the prod project.",
+        "fr": "Les politiques d'autorisation s'additionnent en descendant l'arbre : la politique effective est l'union des politiques ancêtres, et il n'y a rien à « retirer » sur le projet puisque le binding vit sur le dossier. La bonne correction : accorder par projet, ou poser une deny policy IAM explicite sur prod."
+      },
+      "difficulty": 2
+    },
+    {
+      "id": "ex-project-id",
+      "kind": "mcq",
+      "prompt": {
+        "en": "Your client renames from \"Acme\" to \"Zenith\" and asks you to rename the project ID acme-prod accordingly. What do you tell them?",
+        "fr": "Votre client passe de « Acme » à « Zenith » et vous demande de renommer l'ID de projet acme-prod en conséquence. Que répondez-vous ?"
+      },
+      "choices": [
+        {
+          "id": "a",
+          "label": {
+            "en": "gcloud projects update --project-id works but breaks references",
+            "fr": "gcloud projects update --project-id fonctionne mais casse les références"
+          }
+        },
+        {
+          "id": "b",
+          "label": {
+            "en": "Only the display name can change; the ID is immutable, migrating means a new project",
+            "fr": "Seul le nom d'affichage peut changer ; l'ID est immuable, migrer signifie un nouveau projet"
+          }
+        },
+        {
+          "id": "c",
+          "label": {
+            "en": "Support can rename it on request",
+            "fr": "Le support peut le renommer sur demande"
+          }
+        },
+        {
+          "id": "d",
+          "label": {
+            "en": "Delete the project and recreate it with the same number",
+            "fr": "Supprimer le projet et le recréer avec le même numéro"
+          }
+        }
+      ],
+      "answerId": "b",
+      "explanation": {
+        "en": "The project ID is immutable and globally unique forever. Only the display name is editable. A real rename is a migration to a new project: new ID, resources recreated or moved, and the old ID stays reserved even after deletion.",
+        "fr": "L'ID de projet est immuable et globalement unique pour toujours. Seul le nom d'affichage se modifie. Un vrai renommage est une migration vers un nouveau projet : nouvel ID, ressources recréées ou déplacées, et l'ancien ID reste réservé même après suppression."
+      },
+      "difficulty": 1
+    },
+    {
+      "id": "ex-predict-filter",
+      "kind": "predict-output",
+      "prompt": {
+        "en": "The project has three VMs: api-1 (RUNNING, europe-west1-b), api-2 (TERMINATED, europe-west1-c), worker-1 (RUNNING, us-central1-a). What does this command print?",
+        "fr": "Le projet a trois VM : api-1 (RUNNING, europe-west1-b), api-2 (TERMINATED, europe-west1-c), worker-1 (RUNNING, us-central1-a). Qu'affiche cette commande ?"
+      },
+      "code": "gcloud compute instances list \\\n  --filter=\"status=RUNNING AND zone:europe-west1\" \\\n  --format=\"value(name)\"",
+      "choices": [
+        { "id": "a", "label": { "en": "api-1", "fr": "api-1" } },
+        { "id": "b", "label": { "en": "api-1 and api-2", "fr": "api-1 et api-2" } },
+        { "id": "c", "label": { "en": "api-1 and worker-1", "fr": "api-1 et worker-1" } },
+        { "id": "d", "label": { "en": "Nothing: the zone filter needs a full zone name", "fr": "Rien : le filtre zone exige un nom de zone complet" } }
+      ],
+      "answerId": "a",
+      "explanation": {
+        "en": "The `:` operator matches as a prefix on the zone path, so zone:europe-west1 catches every europe-west1-* zone. api-2 is excluded by status=RUNNING, worker-1 by the zone. `value(name)` prints bare names, one per line.",
+        "fr": "L'opérateur `:` fait une correspondance par préfixe sur la zone, donc zone:europe-west1 attrape toutes les zones europe-west1-*. api-2 est exclue par status=RUNNING, worker-1 par la zone. `value(name)` affiche les noms bruts, un par ligne."
+      },
+      "difficulty": 2
+    },
+    {
+      "id": "ex-adc-bug",
+      "kind": "find-bug",
+      "prompt": {
+        "en": "On a fresh laptop, this session ends with the Node.js app throwing \"Could not load the default credentials\". What went wrong?",
+        "fr": "Sur un laptop neuf, cette session se termine par l'appli Node.js qui lève « Could not load the default credentials ». Quel est le problème ?"
+      },
+      "code": "gcloud auth login\ngcloud config set project client-a-prod\ngcloud storage ls        # works fine\nnode app.js              # crashes: Could not load the default credentials",
+      "choices": [
+        {
+          "id": "a",
+          "label": {
+            "en": "The project is not set for Node.js",
+            "fr": "Le projet n'est pas défini pour Node.js"
+          }
+        },
+        {
+          "id": "b",
+          "label": {
+            "en": "`gcloud auth application-default login` was never run, so no ADC exists for client libraries",
+            "fr": "`gcloud auth application-default login` n'a jamais été lancé, donc aucun ADC n'existe pour les bibliothèques"
+          }
+        },
+        {
+          "id": "c",
+          "label": {
+            "en": "Node.js requires a service account key file, always",
+            "fr": "Node.js exige toujours un fichier de clé de compte de service"
+          }
+        },
+        {
+          "id": "d",
+          "label": {
+            "en": "The Cloud Storage API is not enabled",
+            "fr": "L'API Cloud Storage n'est pas activée"
+          }
+        }
+      ],
+      "answerId": "b",
+      "explanation": {
+        "en": "`gcloud auth login` only authenticates the CLI. Client libraries resolve Application Default Credentials: env var, ADC file, attached service account. On a laptop none of the three exists until `gcloud auth application-default login` writes the ADC file. No key file needed.",
+        "fr": "`gcloud auth login` n'authentifie que le CLI. Les bibliothèques résolvent les Application Default Credentials : variable d'env, fichier ADC, compte de service attaché. Sur un laptop, aucun des trois n'existe tant que `gcloud auth application-default login` n'a pas écrit le fichier ADC. Aucun fichier de clé nécessaire."
+      },
+      "difficulty": 2
+    },
+    {
+      "id": "ex-budget",
+      "kind": "mcq",
+      "prompt": {
+        "en": "A startup wants a guarantee that their sandbox project can never spend more than 100 EUR/month. Which answer is honest?",
+        "fr": "Une startup veut la garantie que son projet sandbox ne dépensera jamais plus de 100 EUR/mois. Quelle réponse est honnête ?"
+      },
+      "choices": [
+        {
+          "id": "a",
+          "label": {
+            "en": "Create a 100 EUR budget: spending stops at 100%",
+            "fr": "Créer un budget de 100 EUR : la dépense s'arrête à 100 %"
+          }
+        },
+        {
+          "id": "b",
+          "label": {
+            "en": "Budgets alert only; a hard cap needs custom automation that unlinks billing, killing the project",
+            "fr": "Les budgets ne font qu'alerter ; un plafond dur exige une automatisation maison qui détache la facturation, tuant le projet"
+          }
+        },
+        {
+          "id": "c",
+          "label": {
+            "en": "Set a quota of 100 EUR in the Quotas page",
+            "fr": "Définir un quota de 100 EUR dans la page Quotas"
+          }
+        },
+        {
+          "id": "d",
+          "label": {
+            "en": "Use a prepaid billing account that stops at zero",
+            "fr": "Utiliser un compte de facturation prépayé qui s'arrête à zéro"
+          }
+        }
+      ],
+      "answerId": "b",
+      "explanation": {
+        "en": "There is no native hard spending cap. Budgets notify (email, Pub/Sub); the documented pattern for a cap is a function triggered by the budget's Pub/Sub topic that detaches the billing account, accepting the project effectively shuts down. Quotas limit resources, not euros.",
+        "fr": "Il n'existe pas de plafond de dépense natif. Les budgets notifient (email, Pub/Sub) ; le pattern documenté pour un plafond est une fonction déclenchée par le topic Pub/Sub du budget qui détache le compte de facturation, en acceptant l'arrêt effectif du projet. Les quotas limitent des ressources, pas des euros."
+      },
+      "difficulty": 1
+    },
+    {
+      "id": "ex-egress",
+      "kind": "mcq",
+      "prompt": {
+        "en": "An API in europe-west1 calls its Redis cache 2M times/day. The bill shows unexpected network charges. Which setup explains it?",
+        "fr": "Une API en europe-west1 appelle son cache Redis 2M de fois/jour. La facture montre des frais réseau inattendus. Quelle configuration l'explique ?"
+      },
+      "choices": [
+        {
+          "id": "a",
+          "label": {
+            "en": "API and Redis in the same zone, internal IPs",
+            "fr": "API et Redis dans la même zone, IP internes"
+          }
+        },
+        {
+          "id": "b",
+          "label": {
+            "en": "Redis deployed in us-central1 while the API is in europe-west1",
+            "fr": "Redis déployé en us-central1 alors que l'API est en europe-west1"
+          }
+        },
+        {
+          "id": "c",
+          "label": {
+            "en": "Traffic is ingress, which is always billed",
+            "fr": "Le trafic est entrant, ce qui est toujours facturé"
+          }
+        },
+        {
+          "id": "d",
+          "label": {
+            "en": "Internal IP traffic is billed at internet rates",
+            "fr": "Le trafic en IP interne est facturé au tarif Internet"
+          }
+        }
+      ],
+      "answerId": "b",
+      "explanation": {
+        "en": "Cross-region traffic is billed in both directions of the round trip's egress legs, and at 2M calls/day it adds up. Same-zone internal traffic is free; ingress is free. The fix is co-locating cache and API in the same region (ideally zone).",
+        "fr": "Le trafic inter-région est facturé sur les segments sortants de l'aller-retour, et à 2M d'appels/jour cela chiffre. Le trafic interne même zone est gratuit ; l'entrant est gratuit. La correction : co-localiser cache et API dans la même région (idéalement la même zone)."
+      },
+      "difficulty": 2
+    },
+    {
+      "id": "ex-quota-gpu",
+      "kind": "find-bug",
+      "prompt": {
+        "en": "A data scientist with roles/owner on a brand-new project runs this and gets an error. The command syntax is valid. What is the actual blocker?",
+        "fr": "Une data scientist avec roles/owner sur un projet tout neuf lance ceci et obtient une erreur. La syntaxe est valide. Quel est le vrai blocage ?"
+      },
+      "code": "gcloud compute instances create train-1 \\\n  --zone=europe-west4-a \\\n  --machine-type=n1-standard-8 \\\n  --accelerator=type=nvidia-tesla-t4,count=1 \\\n  --maintenance-policy=TERMINATE\n# ERROR: Quota 'GPUS_ALL_REGIONS' exceeded. Limit: 0.0 globally.",
+      "choices": [
+        {
+          "id": "a",
+          "label": {
+            "en": "Owner role lacks compute.instances.create",
+            "fr": "Le rôle owner n'a pas compute.instances.create"
+          }
+        },
+        {
+          "id": "b",
+          "label": {
+            "en": "New projects have a GPU quota of 0; a quota increase must be requested and approved",
+            "fr": "Les projets neufs ont un quota GPU de 0 ; il faut demander et obtenir une augmentation de quota"
+          }
+        },
+        {
+          "id": "c",
+          "label": {
+            "en": "T4 GPUs require a spot provisioning model",
+            "fr": "Les GPU T4 exigent le modèle spot"
+          }
+        },
+        {
+          "id": "d",
+          "label": {
+            "en": "GPUs are unavailable in europe-west4",
+            "fr": "Les GPU sont indisponibles en europe-west4"
+          }
+        }
+      ],
+      "answerId": "b",
+      "explanation": {
+        "en": "The message says it: the global GPU allocation quota is 0, the default on new projects for expensive resources. This is capacity control, not IAM — owner rights change nothing. Request the increase in the Quotas page and wait for approval; europe-west4 does offer T4s.",
+        "fr": "Le message le dit : le quota global d'allocation GPU est à 0, défaut des projets neufs pour les ressources chères. C'est du contrôle de capacité, pas de l'IAM — être owner n'y change rien. Demandez l'augmentation dans la page Quotas et attendez l'approbation ; europe-west4 propose bien des T4."
+      },
+      "difficulty": 2
+    },
+    {
+      "id": "ex-region-choice",
+      "kind": "mcq",
+      "prompt": {
+        "en": "A French health-data product must keep data in France. Which reflex is the right one before starting?",
+        "fr": "Un produit de données de santé français doit garder les données en France. Quel est le bon réflexe avant de commencer ?"
+      },
+      "choices": [
+        {
+          "id": "a",
+          "label": {
+            "en": "Pick the EU multi-region: it includes France",
+            "fr": "Choisir la multi-région EU : elle inclut la France"
+          }
+        },
+        {
+          "id": "b",
+          "label": {
+            "en": "Target europe-west9 (Paris) and verify each needed service is available there before committing",
+            "fr": "Viser europe-west9 (Paris) et vérifier la disponibilité de chaque service requis avant de s'engager"
+          }
+        },
+        {
+          "id": "c",
+          "label": {
+            "en": "Any europe-west* region satisfies French residency",
+            "fr": "Toute région europe-west* satisfait la résidence française"
+          }
+        },
+        {
+          "id": "d",
+          "label": {
+            "en": "Data residency is handled automatically by GCP",
+            "fr": "La résidence des données est gérée automatiquement par GCP"
+          }
+        }
+      ],
+      "answerId": "b",
+      "explanation": {
+        "en": "Residency in France means a French region: europe-west9 (Paris). The EU multi-region deliberately spreads data across several European countries, which may violate the constraint. And newer or niche services are not in every region, so the service-by-service availability check comes before any commitment.",
+        "fr": "Résidence en France = région française : europe-west9 (Paris). La multi-région EU répartit délibérément les données sur plusieurs pays européens, ce qui peut violer la contrainte. Et les services récents ou de niche ne sont pas dans toutes les régions : la vérification service par service précède tout engagement."
+      },
+      "difficulty": 1
+    }
+  ]
+}

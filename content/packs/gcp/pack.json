@@ -1,0 +1,127 @@
+{
+  "id": "gcp",
+  "name": "GcpTrainer",
+  "targetVersion": "2026-07",
+  "modules": [
+    {
+      "id": "fundamentals",
+      "title": { "en": "Platform fundamentals", "fr": "Fondamentaux de la plateforme" },
+      "tagline": {
+        "en": "Resource hierarchy, regions, gcloud, billing",
+        "fr": "Hiérarchie des ressources, régions, gcloud, facturation"
+      },
+      "icon": "🧭",
+      "status": "available"
+    },
+    {
+      "id": "compute",
+      "title": { "en": "Compute options", "fr": "Options de calcul" },
+      "tagline": {
+        "en": "Compute Engine, GKE, Cloud Run, Functions: choosing",
+        "fr": "Compute Engine, GKE, Cloud Run, Functions : choisir"
+      },
+      "icon": "🖥️",
+      "status": "available"
+    },
+    {
+      "id": "storage",
+      "title": { "en": "Storage", "fr": "Stockage" },
+      "tagline": {
+        "en": "Cloud Storage, persistent disks, Filestore",
+        "fr": "Cloud Storage, disques persistants, Filestore"
+      },
+      "icon": "🗄️",
+      "status": "planned"
+    },
+    {
+      "id": "databases",
+      "title": { "en": "Databases", "fr": "Bases de données" },
+      "tagline": {
+        "en": "Cloud SQL, Spanner, Firestore, Bigtable, AlloyDB",
+        "fr": "Cloud SQL, Spanner, Firestore, Bigtable, AlloyDB"
+      },
+      "icon": "🛢️",
+      "status": "planned"
+    },
+    {
+      "id": "networking",
+      "title": { "en": "Networking", "fr": "Réseau" },
+      "tagline": {
+        "en": "VPC, load balancing, DNS, hybrid connectivity",
+        "fr": "VPC, load balancing, DNS, connectivité hybride"
+      },
+      "icon": "🌐",
+      "status": "planned"
+    },
+    {
+      "id": "iam-security",
+      "title": { "en": "IAM & security", "fr": "IAM & sécurité" },
+      "tagline": {
+        "en": "IAM, service accounts, KMS, Secret Manager",
+        "fr": "IAM, comptes de service, KMS, Secret Manager"
+      },
+      "icon": "🔐",
+      "status": "planned"
+    },
+    {
+      "id": "data-analytics",
+      "title": { "en": "Data & analytics", "fr": "Data & analytique" },
+      "tagline": {
+        "en": "BigQuery, Dataflow, Dataproc, Composer",
+        "fr": "BigQuery, Dataflow, Dataproc, Composer"
+      },
+      "icon": "📊",
+      "status": "planned"
+    },
+    {
+      "id": "serverless-messaging",
+      "title": { "en": "Messaging & eventing", "fr": "Messaging & événements" },
+      "tagline": {
+        "en": "Pub/Sub, Eventarc, Tasks, Scheduler, Workflows",
+        "fr": "Pub/Sub, Eventarc, Tasks, Scheduler, Workflows"
+      },
+      "icon": "📨",
+      "status": "planned"
+    },
+    {
+      "id": "observability-sre",
+      "title": { "en": "Observability & SRE", "fr": "Observabilité & SRE" },
+      "tagline": {
+        "en": "Monitoring, Logging, Trace, SLOs, error budgets",
+        "fr": "Monitoring, Logging, Trace, SLO, budgets d'erreur"
+      },
+      "icon": "🔭",
+      "status": "planned"
+    },
+    {
+      "id": "devops-iac",
+      "title": { "en": "DevOps & IaC", "fr": "DevOps & IaC" },
+      "tagline": {
+        "en": "Cloud Build, Artifact Registry, Cloud Deploy, Terraform",
+        "fr": "Cloud Build, Artifact Registry, Cloud Deploy, Terraform"
+      },
+      "icon": "🚀",
+      "status": "planned"
+    },
+    {
+      "id": "ml-ai",
+      "title": { "en": "ML & AI", "fr": "ML & IA" },
+      "tagline": {
+        "en": "Vertex AI, generative AI, model serving",
+        "fr": "Vertex AI, IA générative, serving de modèles"
+      },
+      "icon": "🤖",
+      "status": "planned"
+    },
+    {
+      "id": "whats-new",
+      "title": { "en": "What's new on GCP", "fr": "Nouveautés GCP" },
+      "tagline": {
+        "en": "Recent launches, deprecations, pricing changes",
+        "fr": "Lancements récents, dépréciations, évolutions tarifaires"
+      },
+      "icon": "✨",
+      "status": "planned"
+    }
+  ]
+}

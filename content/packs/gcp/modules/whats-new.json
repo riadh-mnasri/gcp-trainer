@@ -1,0 +1,754 @@
+{
+  "id": "whats-new",
+  "title": { "en": "What's new on GCP", "fr": "Nouveautés GCP" },
+  "tagline": {
+    "en": "Recent launches, deprecations, pricing changes",
+    "fr": "Lancements récents, dépréciations, évolutions tarifaires"
+  },
+  "icon": "✨",
+  "lessons": [
+    {
+      "id": "whats-new-tracking-signal",
+      "title": {
+        "en": "Reading the signal: release notes, deprecation pages, GA vs Preview",
+        "fr": "Lire le signal : release notes, pages de dépréciation, GA vs Preview"
+      },
+      "minutes": 5,
+      "blocks": [
+        {
+          "type": "text",
+          "body": {
+            "en": "Three channels carry GCP change, and they're not interchangeable. The central release notes hub aggregates every product's changes by date — good for a broad weekly skim, useless for spotting a niche deprecation buried three products deep. Each product also maintains its own deprecation page (Compute Engine, IAM, Migration Center all have one) listing feature-level sunsets that matter only to the teams actually running that product. Underneath both sits the Terms of Service deprecation policy, the actual contractual backstop that defines what \"deprecated\" is legally required to mean.",
+            "fr": "Trois canaux portent les changements GCP, et ils ne se valent pas. Le hub central de release notes agrège les changements de tous les produits par date — bon pour un survol hebdomadaire large, inutile pour repérer une dépréciation de niche enterrée trois produits plus loin. Chaque produit tient aussi sa propre page de dépréciation (Compute Engine, IAM, Migration Center en ont chacun une) listant les fins de vie au niveau fonctionnalité, qui n'intéressent que les équipes utilisant réellement ce produit. Sous les deux se trouve la politique de dépréciation des Conditions d'utilisation, le véritable filet contractuel qui définit ce que « déprécié » doit légalement signifier."
+          }
+        },
+        {
+          "type": "text",
+          "body": {
+            "en": "That policy guarantees at least 12 months' notice, but only for features that reached General Availability. Anything Preview or earlier is explicitly excluded — Google can pull a Preview capability with a few weeks' notice and be fully within the terms everyone agreed to. Practically, this means the maturity label on a feature (GA, Preview, or an unlabeled alpha) is not decoration: it's the single biggest predictor of how much runway a production dependency actually has before it can disappear.",
+            "fr": "Cette politique garantit un préavis d'au moins 12 mois, mais uniquement pour les fonctionnalités ayant atteint la disponibilité générale (GA). Tout ce qui est en Preview ou en amont est explicitement exclu — Google peut retirer une fonctionnalité Preview avec quelques semaines de préavis, en restant parfaitement dans le cadre des conditions acceptées par tous. En pratique, l'étiquette de maturité d'une fonctionnalité (GA, Preview, ou une alpha non étiquetée) n'est pas de la décoration : c'est le meilleur prédicteur de la marge dont dispose réellement une dépendance en production avant de pouvoir disparaître."
+          }
+        },
+        {
+          "type": "code",
+          "code": "gcloud compute images describe debian-11-bullseye-v20250712 \\\n  --project debian-cloud \\\n  --format=\"yaml(deprecated)\"\n\n# deprecated:\n#   state: DEPRECATED\n#   replacement: https://www.googleapis.com/compute/v1/projects/debian-cloud/global/images/family/debian-12\n#   deprecated: '2026-01-15T00:00:00.000-08:00'\n#   obsolete: '2026-07-15T00:00:00.000-08:00'\n#   deleted: '2027-01-15T00:00:00.000-08:00'",
+          "caption": {
+            "en": "Deprecation is machine-readable on GCE images: three dated states (deprecated, obsolete, deleted), not a single cliff.",
+            "fr": "La dépréciation est lisible par machine sur les images GCE : trois états datés (deprecated, obsolete, deleted), pas une seule falaise."
+          }
+        },
+        {
+          "type": "gotcha",
+          "body": {
+            "en": "A team that builds a production dependency on a Preview feature and later gets a shutdown notice measured in weeks hasn't been wronged by Google — that's exactly what the policy allows, since pre-GA is explicitly excluded from the 12-month guarantee. The mistake happened earlier, at the design review that treated a Preview label as a footnote instead of a load-bearing constraint on how much notice to expect.",
+            "fr": "Une équipe qui construit une dépendance de production sur une fonctionnalité Preview et reçoit plus tard un préavis de fermeture de quelques semaines n'a pas été lésée par Google — c'est exactement ce que la politique autorise, puisque le pré-GA est explicitement exclu de la garantie de 12 mois. L'erreur a eu lieu plus tôt, à la revue de conception qui a traité l'étiquette Preview comme une note de bas de page plutôt que comme une contrainte structurante sur le préavis à attendre."
+          }
+        },
+        {
+          "type": "tip",
+          "body": {
+            "en": "Check both the central hub and the per-product deprecation page of everything actually running in production — not the whole catalog. The hub catches broad shifts; the per-product page is the actual checklist an architecture review should run against each quarter, since it's the one place a niche but critical sunset can't hide behind that week's flashier launch news.",
+            "fr": "Consultez à la fois le hub central et la page de dépréciation propre à chaque produit réellement en production — pas tout le catalogue. Le hub capte les grands virages ; la page par produit est la vraie checklist qu'une revue d'architecture doit dérouler chaque trimestre, car c'est le seul endroit où une fin de vie de niche mais critique ne peut pas se cacher derrière l'actualité plus tape-à-l'œil de la semaine."
+          }
+        }
+      ]
+    },
+    {
+      "id": "whats-new-agent-platform",
+      "title": {
+        "en": "The 2026 shift: Vertex AI folds into the Gemini Enterprise Agent Platform",
+        "fr": "Le virage 2026 : Vertex AI s'intègre à la Gemini Enterprise Agent Platform"
+      },
+      "minutes": 5,
+      "blocks": [
+        {
+          "type": "text",
+          "body": {
+            "en": "At Cloud Next '26, Google announced that Vertex AI's services and roadmap now flow through a new umbrella, the Gemini Enterprise Agent Platform, rather than shipping as a standalone product line. The platform bundles Agent Studio, Agent-to-Agent orchestration, an Agent Registry, Agent Identity, Agent Gateway and Agent Observability — the pieces an architect previously assembled by hand across separate Vertex AI services are now positioned as one coherent surface.",
+            "fr": "Lors de Cloud Next '26, Google a annoncé que les services et la feuille de route de Vertex AI passent désormais par un nouvel ensemble fédérateur, la Gemini Enterprise Agent Platform, plutôt que d'être livrés comme une gamme de produits autonome. La plateforme regroupe Agent Studio, l'orchestration Agent-to-Agent, un Agent Registry, Agent Identity, Agent Gateway et Agent Observability — les briques qu'un architecte assemblait auparavant à la main entre services Vertex AI séparés sont désormais positionnées comme une seule surface cohérente."
+          }
+        },
+        {
+          "type": "text",
+          "body": {
+            "en": "For teams already running Vertex AI in production, nothing breaks the day of the keynote — but the roadmap direction has changed from \"call individual Vertex AI APIs\" to \"build agents on the platform.\" The first concrete casualty is Vertex AI Extensions, the mechanism for packaging a model with callable tools: it's now deprecated, scheduled to shut down after November 26, 2026, with Agent Platform positioned as the direct successor for that exact use case.",
+            "fr": "Pour les équipes qui font déjà tourner Vertex AI en production, rien ne casse le jour de la keynote — mais l'orientation de la feuille de route est passée de « appeler des API Vertex AI individuelles » à « construire des agents sur la plateforme ». La première victime concrète est Vertex AI Extensions, le mécanisme d'empaquetage d'un modèle avec des outils appelables : il est désormais déprécié, avec un arrêt programmé après le 26 novembre 2026, l'Agent Platform étant positionnée comme le successeur direct pour cet usage précis."
+          }
+        },
+        {
+          "type": "code",
+          "code": "# During the transition, both API surfaces answer at once — that alone tells you nothing\ngcloud services list --enabled \\\n  --filter=\"name:aiplatform.googleapis.com OR name:agentplatform.googleapis.com\" \\\n  --format=\"table(name, title)\"",
+          "caption": {
+            "en": "Both APIs being enabled doesn't mean both are the long-term target — check the product docs, not just service status.",
+            "fr": "Le fait que les deux API soient activées ne veut pas dire que les deux sont la cible à long terme — vérifiez la doc produit, pas seulement le statut du service."
+          }
+        },
+        {
+          "type": "gotcha",
+          "body": {
+            "en": "Reading \"our code still calls the same aiplatform.googleapis.com endpoint today\" as \"we don't need to plan anything\" ignores that the sunset clock on a specific capability (Extensions) started at the announcement, not at the eventual shutdown date. A migration deadline landing in the same year as the rest of an already-busy AI roadmap is exactly the kind of thing that gets deprioritized until it's suddenly urgent.",
+            "fr": "Lire « notre code appelle toujours le même endpoint aiplatform.googleapis.com aujourd'hui » comme « nous n'avons rien à planifier » ignore que l'horloge de fin de vie d'une capacité précise (Extensions) a démarré à l'annonce, pas à la date d'arrêt effective. Une échéance de migration tombant la même année que le reste d'une feuille de route IA déjà chargée est exactement le genre de chose qu'on dépriorise jusqu'à ce qu'elle devienne soudain urgente."
+          }
+        },
+        {
+          "type": "tip",
+          "body": {
+            "en": "When a new Agent Platform capability shows up in a keynote, sort it into one of three buckets before committing an architecture to it: GA and documented as the direct successor of something you already depend on (plan the migration now, with a date); Preview and explicitly the named target of an existing deprecation (build the plan, but it's not this week's fire); or a keynote demo with no dated deprecation of anything old yet (that's marketing surface area, not a commitment — wait).",
+            "fr": "Quand une nouvelle capacité de l'Agent Platform apparaît dans une keynote, rangez-la dans l'une de ces trois catégories avant d'y engager une architecture : GA et documentée comme successeur direct de quelque chose dont vous dépendez déjà (planifiez la migration dès maintenant, avec une date) ; Preview et explicitement désignée comme cible d'une dépréciation existante (préparez le plan, mais ce n'est pas l'urgence de la semaine) ; ou une démo de keynote sans dépréciation datée de quoi que ce soit d'ancien (c'est de la surface marketing, pas un engagement — attendez)."
+          }
+        }
+      ]
+    },
+    {
+      "id": "whats-new-pricing-signals",
+      "title": {
+        "en": "Pricing changes worth budgeting for",
+        "fr": "Évolutions tarifaires à budgétiser"
+      },
+      "minutes": 5,
+      "blocks": [
+        {
+          "type": "text",
+          "body": {
+            "en": "Since May 1, 2026, list prices for CDN Interconnect, Direct Peering and Carrier Peering have gone up sharply: North America effectively doubled from $0.04/GB to $0.08/GB, Europe moved from $0.05 to $0.08/GB, Asia from $0.06 to $0.085/GB. These are hybrid-connectivity egress paths — the traffic leaving GCP toward an on-prem data center or a carrier's network — and they're easy to leave out of a cost model built around compute and storage, right up until the line item that quietly doubled shows up on an invoice nobody was watching.",
+            "fr": "Depuis le 1er mai 2026, les prix catalogue de CDN Interconnect, Direct Peering et Carrier Peering ont fortement augmenté : l'Amérique du Nord a effectivement doublé, de 0,04 $/Go à 0,08 $/Go, l'Europe est passée de 0,05 à 0,08 $/Go, l'Asie de 0,06 à 0,085 $/Go. Ce sont des chemins de sortie liés à la connectivité hybride — le trafic quittant GCP vers un datacenter on-prem ou le réseau d'un opérateur — et il est facile de les oublier dans un modèle de coût construit autour du calcul et du stockage, jusqu'à ce que la ligne qui a discrètement doublé apparaisse sur une facture que personne ne surveillait."
+          }
+        },
+        {
+          "type": "text",
+          "body": {
+            "en": "Three other 2026 changes worth tracking on the same radar: a separate pricing update for custom machine types (the vCPU/memory shape you pick per instance), a price increase for A3 Ultra GPU instances in Europe and Asia, and new metered billing for Agent Runtime, Sessions, Memory Bank and Code Execution that started in February 2026. That last one is the sharpest trap: a capability that felt free during its preview window can start metering the moment it reaches a billing-eligible state, and a team that budgeted off the preview period gets the surprise on the very next invoice.",
+            "fr": "Trois autres évolutions 2026 à surveiller sur le même radar : une mise à jour tarifaire distincte pour les custom machine types (la forme vCPU/mémoire choisie par instance), une hausse de prix pour les instances GPU A3 Ultra en Europe et en Asie, et une nouvelle facturation à l'usage pour Agent Runtime, Sessions, Memory Bank et Code Execution démarrée en février 2026. Ce dernier point est le piège le plus aigu : une capacité qui semblait gratuite pendant sa fenêtre de preview peut commencer à être facturée dès qu'elle atteint un état éligible à la facturation, et une équipe qui a budgété sur la base de la période de preview a la surprise dès la facture suivante."
+          }
+        },
+        {
+          "type": "code",
+          "code": "# Scope a budget alert to a cost line most teams never watch: interconnect/peering egress\ngcloud billing budgets create \\\n  --billing-account=012345-6789AB-CDEF01 \\\n  --display-name=\"peering-egress-watch\" \\\n  --budget-amount=500USD \\\n  --filter-services=$(gcloud billing services list \\\n    --filter=\"displayName:'Network Service Tiers'\" \\\n    --format=\"value(name)\")",
+          "caption": {
+            "en": "A budget alert scoped to one SKU catches a quiet price change before the monthly invoice does.",
+            "fr": "Une alerte de budget ciblée sur un seul SKU détecte un changement de prix discret avant que la facture mensuelle ne le fasse."
+          }
+        },
+        {
+          "type": "gotcha",
+          "body": {
+            "en": "Customers on fixed-price contracts don't see the peering increase until renewal, but anyone on a floating discount — a percentage off list price — rides the new list price the moment the notice period ends. A contract that reads \"20% off list\" is not price protection against Google raising the list price itself; it only guarantees the discount rate, not the number it's a discount off of.",
+            "fr": "Les clients en contrat à prix fixe ne voient l'augmentation du peering qu'au renouvellement, mais quiconque a une remise flottante — un pourcentage sur le prix catalogue — subit le nouveau prix catalogue dès la fin du préavis. Un contrat qui dit « 20 % de remise sur le catalogue » n'est pas une protection tarifaire contre une hausse du catalogue lui-même ; il garantit seulement le taux de remise, pas le nombre sur lequel il s'applique."
+          }
+        },
+        {
+          "type": "tip",
+          "body": {
+            "en": "Track pricing announcements by product and SKU, not by vibes, and split them into two buckets in a budget review: costs a contract actually shields until renewal, versus costs that ride the list price immediately. Those two categories need entirely different urgency — one is a calendar entry, the other is this quarter's problem.",
+            "fr": "Suivez les annonces tarifaires par produit et par SKU, pas au feeling, et rangez-les en deux catégories dans une revue de budget : les coûts qu'un contrat protège réellement jusqu'au renouvellement, contre ceux qui subissent le prix catalogue immédiatement. Ces deux catégories demandent une urgence totalement différente — l'une est une entrée d'agenda, l'autre est le problème de ce trimestre."
+          }
+        }
+      ]
+    },
+    {
+      "id": "whats-new-model-cadence",
+      "title": {
+        "en": "Model deprecations move faster than infrastructure deprecations",
+        "fr": "Les dépréciations de modèles vont plus vite que celles de l'infrastructure"
+      },
+      "minutes": 5,
+      "blocks": [
+        {
+          "type": "text",
+          "body": {
+            "en": "Infrastructure features that reach GA get at least 12 months' notice under the ToS deprecation policy. Models served through the Gemini Enterprise Agent Platform are a different animal: most ship and stay labeled Preview, explicitly outside that 12-month guarantee, so their deprecation windows are measured in weeks. Two concrete 2026 examples: Gemini 3.1 Flash Image Preview and Gemini 3 Pro Image Preview were deprecated with a recommendation to update model endpoints before July 17, 2026; the entire Grok 4.1 model family (grok-4.1-fast-reasoning and grok-4.1-fast-non-reasoning), served as Model-as-a-Service on the platform, shuts down completely on August 20, 2026.",
+            "fr": "Les fonctionnalités d'infrastructure qui atteignent la GA bénéficient d'un préavis d'au moins 12 mois selon la politique de dépréciation des CGU. Les modèles servis via la Gemini Enterprise Agent Platform sont d'une autre nature : la plupart sont livrés et restent étiquetés Preview, explicitement hors de cette garantie de 12 mois, donc leurs fenêtres de dépréciation se comptent en semaines. Deux exemples concrets de 2026 : Gemini 3.1 Flash Image Preview et Gemini 3 Pro Image Preview ont été dépréciés avec une recommandation de mettre à jour les endpoints de modèle avant le 17 juillet 2026 ; toute la famille de modèles Grok 4.1 (grok-4.1-fast-reasoning et grok-4.1-fast-non-reasoning), servie en Model-as-a-Service sur la plateforme, s'arrête complètement le 20 août 2026."
+          }
+        },
+        {
+          "type": "text",
+          "body": {
+            "en": "The practical consequence: pin a model by its exact version string rather than an alias that quietly resolves to \"whatever is current,\" and track model-level release notes separately from platform-level ones — model families move on something closer to a monthly cadence, the platform itself on a slower, quarterly-ish one. Anything consumed only through a Preview endpoint deserves a re-validation on every quarter, not a one-time check at launch.",
+            "fr": "La conséquence pratique : épinglez un modèle par sa chaîne de version exacte plutôt que par un alias qui se résout discrètement vers « ce qui est actuel », et suivez les release notes au niveau modèle séparément de celles au niveau plateforme — les familles de modèles évoluent à un rythme proche du mensuel, la plateforme elle-même à un rythme plus lent, plutôt trimestriel. Tout ce qui n'est consommé qu'à travers un endpoint Preview mérite une revalidation chaque trimestre, pas une simple vérification unique au lancement."
+          }
+        },
+        {
+          "type": "code",
+          "code": "# Unpinned — breaks silently the day the alias is repointed or the model is retired\nmodel = \"gemini-3-pro-image-preview\"\n\n# Pinned — fails loudly at call time if the exact version is gone,\n# instead of silently drifting behavior underneath an unchanged alias\nmodel = \"gemini-3-pro-image-preview-001\"",
+          "caption": {
+            "en": "An alias resolving to \"whatever is current\" is convenient until the day it resolves to nothing, mid-incident.",
+            "fr": "Un alias qui se résout vers « ce qui est actuel » est pratique jusqu'au jour où il ne se résout plus vers rien, en plein incident."
+          }
+        },
+        {
+          "type": "gotcha",
+          "body": {
+            "en": "The Grok 4.1 shutdown and the Gemini 3.x image-preview deprecations shipped through the Gemini Enterprise Agent Platform's own release notes page, not the general Cloud release notes hub most infra teams already watch — a model deprecation notice is easy to miss entirely if the team on-call for an AI feature isn't the same one reading infrastructure release notes.",
+            "fr": "L'arrêt de Grok 4.1 et les dépréciations Gemini 3.x image-preview sont passés par la page de release notes propre à la Gemini Enterprise Agent Platform, pas par le hub général des release notes Cloud que les équipes infra surveillent déjà — une notification de dépréciation de modèle est facile à rater totalement si l'équipe d'astreinte pour une fonctionnalité IA n'est pas celle qui lit les release notes d'infrastructure."
+          }
+        },
+        {
+          "type": "tip",
+          "body": {
+            "en": "For any production feature built on a Preview model, point a calendar reminder at that model's own release-notes page, not the general Cloud one, and budget an explicit \"model migration\" line into the sprint the same way you'd budget a library's major-version bump — it's exactly as disruptive to a prompt or a fine-tuned integration, and it happens far more often.",
+            "fr": "Pour toute fonctionnalité en production construite sur un modèle Preview, pointez un rappel calendaire vers la page de release notes propre à ce modèle, pas vers la page Cloud générale, et budgétez une ligne « migration de modèle » explicite dans le sprint, comme vous budgétiseriez une montée de version majeure d'une bibliothèque — c'est tout aussi perturbateur pour un prompt ou une intégration fine-tunée, et cela arrive bien plus souvent."
+          }
+        }
+      ]
+    },
+    {
+      "id": "whats-new-watch-process",
+      "title": {
+        "en": "A lightweight watch process, not a full-time job",
+        "fr": "Un processus de veille léger, pas un emploi à temps plein"
+      },
+      "minutes": 5,
+      "blocks": [
+        {
+          "type": "text",
+          "body": {
+            "en": "A workable cadence for a small team: a recurring 30-minute slot — first Monday of the sprint, say — to skim the central Cloud release notes for the last two weeks, plus the deprecation page of every product the team actually runs in production, not the whole catalog. Anything GA and dated becomes a ticket with a due date derived from the notice period; anything Preview gets flagged \"watch,\" not scheduled, until it either reaches GA or earns an actual deprecation date of its own.",
+            "fr": "Un rythme praticable pour une petite équipe : un créneau récurrent de 30 minutes — premier lundi du sprint, par exemple — pour survoler les release notes Cloud des deux dernières semaines, plus la page de dépréciation de chaque produit réellement en production dans l'équipe, pas tout le catalogue. Ce qui est GA et daté devient un ticket avec une échéance dérivée du préavis ; ce qui est Preview est marqué « à surveiller », pas planifié, tant qu'il n'atteint pas la GA ou n'obtient pas sa propre date de dépréciation."
+          }
+        },
+        {
+          "type": "text",
+          "body": {
+            "en": "Two structural habits make this sustainable. First, pin infrastructure-as-code provider and module versions so an upstream change can't silently alter a plan's output on the next init. Second, keep a single internal document — not scattered across inboxes — listing every Preview-status dependency currently in production, reviewed at the same cadence: \"who signed off on using a Preview feature in prod\" is exactly the question with no good answer six months later if it wasn't written down when the decision was made.",
+            "fr": "Deux habitudes structurelles rendent cela tenable dans la durée. D'abord, épingler les versions du provider et des modules d'infrastructure-as-code pour qu'un changement en amont ne puisse pas altérer silencieusement le résultat d'un plan au prochain init. Ensuite, tenir un document interne unique — pas dispersé dans des boîtes mail — listant chaque dépendance au statut Preview actuellement en production, revu à la même cadence : « qui a validé l'usage d'une fonctionnalité Preview en prod » est exactement la question sans bonne réponse six mois plus tard si elle n'a pas été notée au moment de la décision."
+          }
+        },
+        {
+          "type": "code",
+          "code": "terraform {\n  required_providers {\n    google = {\n      source  = \"hashicorp/google\"\n      version = \"= 6.14.0\"\n    }\n  }\n}",
+          "caption": {
+            "en": "An unpinned provider (>= 6.0) can pull in a new major version's default-behavior change on the next init — at exactly the wrong moment.",
+            "fr": "Un provider non épinglé (>= 6.0) peut embarquer le changement de comportement par défaut d'une nouvelle version majeure au prochain init — au pire moment possible."
+          }
+        },
+        {
+          "type": "gotcha",
+          "body": {
+            "en": "Teams that skip the \"Preview dependencies in production\" document almost always discover the gap during an actual deprecation notice, reconstructing from memory or git blame which service is still riding a Preview feature — by then there's no time left in the notice period for a calm migration, only a rushed one.",
+            "fr": "Les équipes qui font l'impasse sur le document « dépendances Preview en production » découvrent presque toujours le trou au moment d'une vraie notification de dépréciation, en reconstituant de mémoire ou via git blame quel service dépend encore d'une fonctionnalité Preview — à ce stade, il ne reste plus de temps dans le préavis pour une migration sereine, seulement une migration précipitée."
+          }
+        },
+        {
+          "type": "tip",
+          "body": {
+            "en": "Treat the watch slot like on-call: rotate who does the 30-minute skim so the knowledge doesn't live in one person's head, and log the outcome — even \"nothing relevant this sprint\" — in the same place every time, so a gap in coverage is visible instead of quietly assumed away.",
+            "fr": "Traitez le créneau de veille comme une astreinte : faites tourner qui fait le survol de 30 minutes pour que la connaissance ne vive pas dans la tête d'une seule personne, et journalisez le résultat — même « rien de pertinent ce sprint » — toujours au même endroit, pour qu'un trou de couverture soit visible plutôt que silencieusement présumé absent."
+          }
+        }
+      ]
+    }
+  ],
+  "flashcards": [
+    {
+      "id": "fc-whats-new-release-channels",
+      "front": {
+        "en": "What's the difference between the central Cloud release notes hub and a product's own deprecation page?",
+        "fr": "Quelle est la différence entre le hub central de release notes Cloud et la page de dépréciation propre à un produit ?"
+      },
+      "back": {
+        "en": "The central hub aggregates every product's changes by date — good for a broad skim, easy to miss a niche item in. A product's own deprecation page lists only that product's feature-level sunsets, and is the actual checklist an architecture review should run against for services in production.",
+        "fr": "Le hub central agrège les changements de tous les produits par date — bon pour un survol large, mais on y rate facilement un élément de niche. La page de dépréciation d'un produit ne liste que les fins de vie de ce produit, et c'est la vraie checklist qu'une revue d'architecture doit dérouler pour les services en production."
+      }
+    },
+    {
+      "id": "fc-whats-new-deprecation-policy",
+      "front": {
+        "en": "What does Google's deprecation policy guarantee, and what is explicitly excluded from it?",
+        "fr": "Que garantit la politique de dépréciation de Google, et qu'en exclut-elle explicitement ?"
+      },
+      "back": {
+        "en": "At least 12 months' notice, but only for features that reached General Availability. Preview and pre-GA features are explicitly excluded, so they can be pulled with only weeks of notice while remaining fully compliant with the terms.",
+        "fr": "Un préavis d'au moins 12 mois, mais uniquement pour les fonctionnalités ayant atteint la disponibilité générale (GA). Les fonctionnalités Preview et pré-GA en sont explicitement exclues, donc elles peuvent être retirées avec seulement quelques semaines de préavis, tout en restant conformes aux conditions."
+      }
+    },
+    {
+      "id": "fc-whats-new-image-lifecycle",
+      "front": {
+        "en": "What are the three dated states in a GCE image's deprecation lifecycle, and how do they differ?",
+        "fr": "Quels sont les trois états datés du cycle de vie de dépréciation d'une image GCE, et en quoi diffèrent-ils ?"
+      },
+      "back": {
+        "en": "DEPRECATED (still usable, but flagged with a warning and a replacement image), OBSOLETE (blocked from new use), and DELETED (removed entirely). It's a machine-readable, three-step timeline, not a single cliff edge.",
+        "fr": "DEPRECATED (encore utilisable, mais signalée avec un avertissement et une image de remplacement), OBSOLETE (bloquée pour tout nouvel usage), et DELETED (supprimée entièrement). C'est une chronologie lisible par machine en trois étapes, pas une falaise unique."
+      }
+    },
+    {
+      "id": "fc-whats-new-agent-platform-shift",
+      "front": {
+        "en": "What changed for Vertex AI at Cloud Next '26, and what didn't break immediately?",
+        "fr": "Qu'est-ce qui a changé pour Vertex AI à Cloud Next '26, et qu'est-ce qui n'a pas cassé immédiatement ?"
+      },
+      "back": {
+        "en": "Vertex AI's services and roadmap now flow through the new Gemini Enterprise Agent Platform rather than shipping standalone. Existing production calls to Vertex AI APIs kept working the day of the announcement — the change is in roadmap direction, not an overnight API break.",
+        "fr": "Les services et la feuille de route de Vertex AI passent désormais par la nouvelle Gemini Enterprise Agent Platform plutôt que d'être livrés de façon autonome. Les appels existants en production vers les API Vertex AI ont continué de fonctionner le jour de l'annonce — le changement est dans l'orientation de la feuille de route, pas une rupture d'API du jour au lendemain."
+      }
+    },
+    {
+      "id": "fc-whats-new-vertex-extensions",
+      "front": {
+        "en": "What happened to Vertex AI Extensions, and what's its successor?",
+        "fr": "Qu'est-il arrivé à Vertex AI Extensions, et quel est son successeur ?"
+      },
+      "back": {
+        "en": "Vertex AI Extensions — the mechanism for packaging a model with callable tools — is deprecated and scheduled to shut down after November 26, 2026. The Gemini Enterprise Agent Platform is positioned as the direct successor for that use case.",
+        "fr": "Vertex AI Extensions — le mécanisme d'empaquetage d'un modèle avec des outils appelables — est déprécié, avec un arrêt programmé après le 26 novembre 2026. La Gemini Enterprise Agent Platform est positionnée comme le successeur direct pour cet usage."
+      }
+    },
+    {
+      "id": "fc-whats-new-peering-price",
+      "front": {
+        "en": "What changed in CDN Interconnect / Direct Peering / Carrier Peering pricing as of May 1, 2026, and why is it easy to overlook?",
+        "fr": "Qu'est-ce qui a changé dans le tarif de CDN Interconnect / Direct Peering / Carrier Peering au 1er mai 2026, et pourquoi est-ce facile à négliger ?"
+      },
+      "back": {
+        "en": "List prices rose sharply — North America effectively doubled from $0.04/GB to $0.08/GB, with similar jumps in Europe and Asia. These are hybrid-connectivity egress paths, easy to leave out of a cost model built mainly around compute and storage.",
+        "fr": "Les prix catalogue ont fortement augmenté — l'Amérique du Nord a effectivement doublé, de 0,04 $/Go à 0,08 $/Go, avec des hausses comparables en Europe et en Asie. Ce sont des chemins de sortie liés à la connectivité hybride, faciles à oublier dans un modèle de coût construit surtout autour du calcul et du stockage."
+      }
+    },
+    {
+      "id": "fc-whats-new-contract-exposure",
+      "front": {
+        "en": "Why doesn't a \"20% off list price\" discount protect a customer from a list-price increase?",
+        "fr": "Pourquoi une remise « 20 % sur le prix catalogue » ne protège-t-elle pas un client d'une hausse du prix catalogue ?"
+      },
+      "back": {
+        "en": "A floating discount is a percentage off whatever the list price currently is — it guarantees the discount rate, not the number it applies to. Once a price-increase notice period ends, the customer rides the new, higher list price at the same discount percentage. Only a fixed-price contract shields against this, and only until renewal.",
+        "fr": "Une remise flottante est un pourcentage sur le prix catalogue actuel — elle garantit le taux de remise, pas le nombre auquel il s'applique. Une fois le préavis de hausse terminé, le client subit le nouveau prix catalogue plus élevé, au même pourcentage de remise. Seul un contrat à prix fixe protège de cela, et seulement jusqu'au renouvellement."
+      }
+    },
+    {
+      "id": "fc-whats-new-agent-billing",
+      "front": {
+        "en": "What new metered billing started in February 2026, and what's the budgeting trap it illustrates?",
+        "fr": "Quelle nouvelle facturation à l'usage a démarré en février 2026, et quel piège de budget illustre-t-elle ?"
+      },
+      "back": {
+        "en": "Agent Runtime, Sessions, Memory Bank and Code Execution began metered billing. The trap: a capability that felt free during its preview window can start metering the moment it reaches a billing-eligible state, surprising a team that budgeted off the preview period.",
+        "fr": "Agent Runtime, Sessions, Memory Bank et Code Execution ont commencé à être facturés à l'usage. Le piège : une capacité qui semblait gratuite pendant sa fenêtre de preview peut commencer à être facturée dès qu'elle atteint un état éligible à la facturation, surprenant une équipe qui a budgété sur la base de la période de preview."
+      }
+    },
+    {
+      "id": "fc-whats-new-model-vs-infra-cadence",
+      "front": {
+        "en": "Why do model deprecations move faster than infrastructure deprecations on GCP?",
+        "fr": "Pourquoi les dépréciations de modèles vont-elles plus vite que celles de l'infrastructure sur GCP ?"
+      },
+      "back": {
+        "en": "Infrastructure features that reach GA get the 12-month ToS guarantee. Most models served through the Agent Platform ship and stay labeled Preview, explicitly outside that guarantee — so their deprecation windows are measured in weeks, not a year.",
+        "fr": "Les fonctionnalités d'infrastructure qui atteignent la GA bénéficient de la garantie de 12 mois des CGU. La plupart des modèles servis via l'Agent Platform sont livrés et restent étiquetés Preview, explicitement hors de cette garantie — leurs fenêtres de dépréciation se comptent donc en semaines, pas en un an."
+      }
+    },
+    {
+      "id": "fc-whats-new-image-model-deadline",
+      "front": {
+        "en": "What happened to Gemini 3.1 Flash Image Preview and Gemini 3 Pro Image Preview, and what was the recommended deadline?",
+        "fr": "Qu'est-il arrivé à Gemini 3.1 Flash Image Preview et Gemini 3 Pro Image Preview, et quelle était l'échéance recommandée ?"
+      },
+      "back": {
+        "en": "Both were deprecated, with a recommendation to update model endpoints before July 17, 2026 to avoid a service disruption.",
+        "fr": "Les deux ont été dépréciés, avec une recommandation de mettre à jour les endpoints de modèle avant le 17 juillet 2026 pour éviter une interruption de service."
+      }
+    },
+    {
+      "id": "fc-whats-new-grok-shutdown",
+      "front": {
+        "en": "What's happening to the Grok 4.1 model family on the Gemini Enterprise Agent Platform, and by when?",
+        "fr": "Qu'arrive-t-il à la famille de modèles Grok 4.1 sur la Gemini Enterprise Agent Platform, et pour quand ?"
+      },
+      "back": {
+        "en": "The full family (grok-4.1-fast-reasoning and grok-4.1-fast-non-reasoning), served as Model-as-a-Service, is deprecated and shuts down completely on August 20, 2026 — after that date the platform no longer serves these models at all.",
+        "fr": "La famille complète (grok-4.1-fast-reasoning et grok-4.1-fast-non-reasoning), servie en Model-as-a-Service, est dépréciée et s'arrête complètement le 20 août 2026 — après cette date, la plateforme ne sert plus du tout ces modèles."
+      }
+    },
+    {
+      "id": "fc-whats-new-model-pinning",
+      "front": {
+        "en": "Why pin a model by its exact version string instead of using an unversioned alias like \"gemini-3-pro-image-preview\"?",
+        "fr": "Pourquoi épingler un modèle par sa chaîne de version exacte plutôt que d'utiliser un alias non versionné comme « gemini-3-pro-image-preview » ?"
+      },
+      "back": {
+        "en": "An unpinned alias resolves to \"whatever is current\" and can silently change behavior or vanish the day the model is retired or the alias is repointed. A pinned version fails loudly at call time instead, giving an explicit signal to migrate rather than a silent drift.",
+        "fr": "Un alias non épinglé se résout vers « ce qui est actuel » et peut changer de comportement silencieusement ou disparaître le jour où le modèle est retiré ou l'alias repointé. Une version épinglée échoue bruyamment à l'appel, donnant un signal explicite de migration plutôt qu'une dérive silencieuse."
+      }
+    },
+    {
+      "id": "fc-whats-new-iac-pinning",
+      "front": {
+        "en": "Why pin Terraform provider versions as part of a change-watch process, rather than leave them open (>=)?",
+        "fr": "Pourquoi épingler les versions de provider Terraform dans le cadre d'un processus de veille, plutôt que de les laisser ouvertes (>=) ?"
+      },
+      "back": {
+        "en": "An open constraint (e.g. >= 6.0) can silently pull in a new major version's default-behavior change on the next `terraform init`, at an unplanned moment. A pinned version (= 6.14.0) only changes when a human deliberately bumps it, after reading what changed.",
+        "fr": "Une contrainte ouverte (par ex. >= 6.0) peut embarquer silencieusement le changement de comportement par défaut d'une nouvelle version majeure au prochain `terraform init`, à un moment non planifié. Une version épinglée (= 6.14.0) ne change que lorsqu'un humain la monte délibérément, après avoir lu ce qui a changé."
+      }
+    },
+    {
+      "id": "fc-whats-new-preview-register",
+      "front": {
+        "en": "Why keep a single internal document listing every Preview-status dependency in production?",
+        "fr": "Pourquoi tenir un document interne unique listant chaque dépendance au statut Preview en production ?"
+      },
+      "back": {
+        "en": "Because \"who signed off on using a Preview feature in prod\" has no good answer six months later if it wasn't written down when the decision was made — and without the register, teams typically discover a Preview dependency only when an actual deprecation notice arrives, leaving no time for a calm migration.",
+        "fr": "Parce que « qui a validé l'usage d'une fonctionnalité Preview en prod » n'a pas de bonne réponse six mois plus tard si ce n'est pas noté au moment de la décision — et sans ce registre, les équipes découvrent typiquement une dépendance Preview seulement à la réception d'une vraie notification de dépréciation, sans laisser de temps pour une migration sereine."
+      }
+    }
+  ],
+  "exercises": [
+    {
+      "id": "ex-whats-new-preview-notice",
+      "kind": "mcq",
+      "prompt": {
+        "en": "A team built a production feature on a Preview capability. Google shuts it down with three weeks' notice. Has Google violated its deprecation policy?",
+        "fr": "Une équipe a construit une fonctionnalité de production sur une capacité Preview. Google l'arrête avec trois semaines de préavis. Google a-t-il violé sa politique de dépréciation ?"
+      },
+      "choices": [
+        {
+          "id": "a",
+          "label": {
+            "en": "Yes, the policy requires at least 12 months' notice for any shutdown",
+            "fr": "Oui, la politique exige au moins 12 mois de préavis pour tout arrêt"
+          }
+        },
+        {
+          "id": "b",
+          "label": {
+            "en": "No, Preview and pre-GA features are explicitly excluded from the 12-month guarantee",
+            "fr": "Non, les fonctionnalités Preview et pré-GA sont explicitement exclues de la garantie de 12 mois"
+          }
+        },
+        {
+          "id": "c",
+          "label": {
+            "en": "Yes, unless the team was notified through the central release notes hub specifically",
+            "fr": "Oui, sauf si l'équipe a été notifiée spécifiquement via le hub central de release notes"
+          }
+        },
+        {
+          "id": "d",
+          "label": {
+            "en": "No, but only if the feature was free during its Preview window",
+            "fr": "Non, mais seulement si la fonctionnalité était gratuite pendant sa fenêtre Preview"
+          }
+        }
+      ],
+      "answerId": "b",
+      "explanation": {
+        "en": "The 12-month minimum notice only applies to features that reached General Availability. Preview and pre-GA features are explicitly carved out of that guarantee, so a short notice on a Preview capability is within the policy — the risk should have been priced in at the design review, not treated as a policy breach after the fact.",
+        "fr": "Le préavis minimal de 12 mois ne s'applique qu'aux fonctionnalités ayant atteint la disponibilité générale (GA). Les fonctionnalités Preview et pré-GA sont explicitement exclues de cette garantie, donc un court préavis sur une capacité Preview reste conforme à la politique — le risque aurait dû être intégré à la revue de conception, pas traité comme une violation de politique après coup."
+      },
+      "difficulty": 1
+    },
+    {
+      "id": "ex-whats-new-image-obsolete",
+      "kind": "predict-output",
+      "prompt": {
+        "en": "An image's deprecation metadata shows `state: OBSOLETE` with a `replacement` field set. What happens when someone runs `gcloud compute instances create` referencing that exact image?",
+        "fr": "Les métadonnées de dépréciation d'une image indiquent `state: OBSOLETE` avec un champ `replacement` renseigné. Que se passe-t-il quand quelqu'un exécute `gcloud compute instances create` en référençant cette image précise ?"
+      },
+      "code": "deprecated:\n  state: OBSOLETE\n  replacement: https://www.googleapis.com/compute/v1/projects/debian-cloud/global/images/family/debian-12",
+      "choices": [
+        {
+          "id": "a",
+          "label": {
+            "en": "The instance is created normally, with only a warning printed",
+            "fr": "L'instance est créée normalement, avec seulement un avertissement affiché"
+          }
+        },
+        {
+          "id": "b",
+          "label": {
+            "en": "The create call is blocked — OBSOLETE images can no longer be used to create new resources",
+            "fr": "L'appel de création est bloqué — les images OBSOLETE ne peuvent plus servir à créer de nouvelles ressources"
+          }
+        },
+        {
+          "id": "c",
+          "label": {
+            "en": "The instance is created but automatically upgraded to the replacement image",
+            "fr": "L'instance est créée mais automatiquement mise à niveau vers l'image de remplacement"
+          }
+        },
+        {
+          "id": "d",
+          "label": {
+            "en": "The command fails because the image no longer exists",
+            "fr": "La commande échoue car l'image n'existe plus"
+          }
+        }
+      ],
+      "answerId": "b",
+      "explanation": {
+        "en": "DEPRECATED still allows new use with a warning; OBSOLETE blocks new use entirely, forcing a switch to the replacement; DELETED removes the image altogether so the reference itself becomes invalid, which is different from option d's premise here (the image still exists in OBSOLETE state, it's just unusable for new instances).",
+        "fr": "DEPRECATED autorise encore un nouvel usage avec un avertissement ; OBSOLETE bloque totalement tout nouvel usage, forçant le passage à l'image de remplacement ; DELETED supprime l'image, rendant la référence elle-même invalide, ce qui diffère de la prémisse de l'option d ici (l'image existe encore en état OBSOLETE, elle est simplement inutilisable pour de nouvelles instances)."
+      },
+      "difficulty": 2
+    },
+    {
+      "id": "ex-whats-new-overlooked-cost",
+      "kind": "mcq",
+      "prompt": {
+        "en": "A hybrid architecture connects an on-prem data center to GCP via Direct Peering. Which 2026 cost change is most likely to be missing from a cost model focused on compute and storage?",
+        "fr": "Une architecture hybride relie un datacenter on-prem à GCP via Direct Peering. Quelle évolution de coût 2026 a le plus de chances de manquer dans un modèle de coût centré sur le calcul et le stockage ?"
+      },
+      "choices": [
+        {
+          "id": "a",
+          "label": {
+            "en": "The A3 Ultra GPU price increase in Europe and Asia",
+            "fr": "La hausse de prix des GPU A3 Ultra en Europe et en Asie"
+          }
+        },
+        {
+          "id": "b",
+          "label": {
+            "en": "The May 1, 2026 Direct Peering / Carrier Peering / CDN Interconnect price increase",
+            "fr": "La hausse de prix du 1er mai 2026 sur Direct Peering / Carrier Peering / CDN Interconnect"
+          }
+        },
+        {
+          "id": "c",
+          "label": {
+            "en": "The custom machine type pricing update",
+            "fr": "La mise à jour tarifaire des custom machine types"
+          }
+        },
+        {
+          "id": "d",
+          "label": {
+            "en": "Agent Runtime and Sessions metered billing",
+            "fr": "La facturation à l'usage d'Agent Runtime et Sessions"
+          }
+        }
+      ],
+      "answerId": "b",
+      "explanation": {
+        "en": "The scenario is specifically a hybrid connectivity path — the exact traffic affected by the May 2026 peering and interconnect price increase (list prices roughly doubling in North America). The other changes are real but apply to GPU instances, compute shapes, or AI agent billing, none of which describe this architecture's on-prem-to-cloud link.",
+        "fr": "Le scénario décrit précisément un lien de connectivité hybride — exactement le trafic concerné par la hausse de prix du peering et de l'interconnexion de mai 2026 (prix catalogue à peu près doublé en Amérique du Nord). Les autres évolutions sont réelles mais concernent les instances GPU, les formes de calcul ou la facturation des agents IA, aucune ne décrivant ce lien on-prem vers le cloud."
+      },
+      "difficulty": 1
+    },
+    {
+      "id": "ex-whats-new-contract-shield",
+      "kind": "mcq",
+      "prompt": {
+        "en": "Two customers both use Direct Peering. Customer A has a fixed-price contract; Customer B has a 15%-off-list discount. Whose bill is affected first by the May 1, 2026 price increase?",
+        "fr": "Deux clients utilisent tous deux Direct Peering. Le client A a un contrat à prix fixe ; le client B a une remise de 15 % sur le catalogue. La facture de qui est affectée en premier par la hausse de prix du 1er mai 2026 ?"
+      },
+      "choices": [
+        {
+          "id": "a",
+          "label": {
+            "en": "Customer A, because fixed-price contracts always track the list price",
+            "fr": "Le client A, car les contrats à prix fixe suivent toujours le prix catalogue"
+          }
+        },
+        {
+          "id": "b",
+          "label": {
+            "en": "Customer B, because a floating discount rides the new list price once the notice period ends",
+            "fr": "Le client B, car une remise flottante subit le nouveau prix catalogue dès la fin du préavis"
+          }
+        },
+        {
+          "id": "c",
+          "label": {
+            "en": "Both are affected identically and immediately",
+            "fr": "Les deux sont affectés de façon identique et immédiate"
+          }
+        },
+        {
+          "id": "d",
+          "label": {
+            "en": "Neither, since existing customers are always grandfathered indefinitely",
+            "fr": "Aucun des deux, les clients existants étant toujours exemptés indéfiniment"
+          }
+        }
+      ],
+      "answerId": "b",
+      "explanation": {
+        "en": "A fixed-price contract shields the customer from a list-price change until renewal. A floating (percentage-off-list) discount only guarantees the discount rate — the moment the list price itself rises and the notice period ends, that customer's bill rises too, at the same discount percentage applied to a higher base.",
+        "fr": "Un contrat à prix fixe protège le client d'un changement de prix catalogue jusqu'au renouvellement. Une remise flottante (pourcentage sur le catalogue) ne garantit que le taux de remise — dès que le prix catalogue lui-même augmente et que le préavis se termine, la facture de ce client augmente aussi, au même pourcentage de remise appliqué à une base plus élevée."
+      },
+      "difficulty": 2
+    },
+    {
+      "id": "ex-whats-new-unpinned-model",
+      "kind": "find-bug",
+      "prompt": {
+        "en": "This production code calls a Gemini image model. On July 18, 2026, requests started failing with unexpected output changes rather than a clean error. Find the bug.",
+        "fr": "Ce code de production appelle un modèle d'image Gemini. Le 18 juillet 2026, des requêtes ont commencé à échouer avec des changements de sortie inattendus plutôt qu'une erreur propre. Trouvez le bug."
+      },
+      "code": "def generate_thumbnail(prompt: str) -> bytes:\n    return vertex_client.generate_image(\n        model=\"gemini-3-pro-image-preview\",\n        prompt=prompt,\n    )",
+      "choices": [
+        {
+          "id": "a",
+          "label": {
+            "en": "generate_image should be an async call",
+            "fr": "generate_image devrait être un appel asynchrone"
+          }
+        },
+        {
+          "id": "b",
+          "label": {
+            "en": "The model string is an unpinned alias for a Preview model that was deprecated with a July 17, 2026 migration deadline",
+            "fr": "La chaîne de modèle est un alias non épinglé d'un modèle Preview qui a été déprécié avec une échéance de migration au 17 juillet 2026"
+          }
+        },
+        {
+          "id": "c",
+          "label": {
+            "en": "The prompt parameter should be sanitized before sending",
+            "fr": "Le paramètre prompt devrait être assaini avant l'envoi"
+          }
+        },
+        {
+          "id": "d",
+          "label": {
+            "en": "vertex_client should be re-instantiated on every call",
+            "fr": "vertex_client devrait être réinstancié à chaque appel"
+          }
+        }
+      ],
+      "answerId": "b",
+      "explanation": {
+        "en": "gemini-3-pro-image-preview was deprecated with a recommended endpoint-update deadline of July 17, 2026 — one day before this incident. Because the code references an unpinned Preview alias rather than an explicit version, the failure mode is exactly what's described: silent behavior drift or degraded output instead of a clean, loud error pointing at the real cause.",
+        "fr": "gemini-3-pro-image-preview a été déprécié avec une échéance recommandée de mise à jour d'endpoint au 17 juillet 2026 — un jour avant cet incident. Le code référençant un alias Preview non épinglé plutôt qu'une version explicite, le mode de défaillance correspond exactement à ce qui est décrit : une dérive silencieuse du comportement ou une sortie dégradée plutôt qu'une erreur propre et bruyante pointant vers la vraie cause."
+      },
+      "difficulty": 2
+    },
+    {
+      "id": "ex-whats-new-extensions-successor",
+      "kind": "mcq",
+      "prompt": {
+        "en": "Vertex AI Extensions is deprecated. What's it being replaced by, per the Cloud Next '26 platform shift?",
+        "fr": "Vertex AI Extensions est déprécié. Par quoi est-il remplacé, selon le virage de plateforme de Cloud Next '26 ?"
+      },
+      "choices": [
+        {
+          "id": "a",
+          "label": {
+            "en": "A newer version of Vertex AI Extensions with the same name",
+            "fr": "Une version plus récente de Vertex AI Extensions portant le même nom"
+          }
+        },
+        {
+          "id": "b",
+          "label": {
+            "en": "The Gemini Enterprise Agent Platform, which now hosts the equivalent tool-packaging capability",
+            "fr": "La Gemini Enterprise Agent Platform, qui héberge désormais la capacité équivalente d'empaquetage d'outils"
+          }
+        },
+        {
+          "id": "c",
+          "label": {
+            "en": "Cloud Run, since both involve deploying code",
+            "fr": "Cloud Run, puisque les deux impliquent de déployer du code"
+          }
+        },
+        {
+          "id": "d",
+          "label": {
+            "en": "There is no successor; the capability is being retired entirely",
+            "fr": "Il n'y a pas de successeur ; la capacité est retirée définitivement"
+          }
+        }
+      ],
+      "answerId": "b",
+      "explanation": {
+        "en": "Extensions packaged a model with callable tools — exactly the use case the Gemini Enterprise Agent Platform is positioned to absorb, alongside its broader Agent Studio, Agent Registry and orchestration pieces. It's a consolidation of an existing capability into the new platform, not a full retirement of the use case.",
+        "fr": "Extensions empaquetait un modèle avec des outils appelables — exactement l'usage que la Gemini Enterprise Agent Platform est positionnée pour absorber, aux côtés de ses briques plus larges Agent Studio, Agent Registry et orchestration. C'est une consolidation d'une capacité existante dans la nouvelle plateforme, pas un retrait complet de l'usage."
+      },
+      "difficulty": 2
+    },
+    {
+      "id": "ex-whats-new-terraform-drift",
+      "kind": "find-bug",
+      "prompt": {
+        "en": "A team's `terraform plan` started proposing unexpected resource changes after a routine `terraform init`, with no code changes on their side. Find the bug in this provider block.",
+        "fr": "Le `terraform plan` d'une équipe a commencé à proposer des changements de ressources inattendus après un `terraform init` de routine, sans aucun changement de code de leur côté. Trouvez le bug dans ce bloc provider."
+      },
+      "code": "terraform {\n  required_providers {\n    google = {\n      source  = \"hashicorp/google\"\n      version = \">= 6.0\"\n    }\n  }\n}",
+      "choices": [
+        {
+          "id": "a",
+          "label": {
+            "en": "The source should be \"google-beta\" instead of \"google\"",
+            "fr": "Le source devrait être « google-beta » au lieu de « google »"
+          }
+        },
+        {
+          "id": "b",
+          "label": {
+            "en": "The open-ended version constraint (>= 6.0) let init silently pull in a new major version with different default behavior",
+            "fr": "La contrainte de version ouverte (>= 6.0) a laissé init embarquer silencieusement une nouvelle version majeure avec un comportement par défaut différent"
+          }
+        },
+        {
+          "id": "c",
+          "label": {
+            "en": "required_providers must be inside a resource block, not the terraform block",
+            "fr": "required_providers doit être à l'intérieur d'un bloc resource, pas du bloc terraform"
+          }
+        },
+        {
+          "id": "d",
+          "label": {
+            "en": "Terraform provider versions cannot be constrained at all",
+            "fr": "Les versions de provider Terraform ne peuvent pas être contraintes du tout"
+          }
+        }
+      ],
+      "answerId": "b",
+      "explanation": {
+        "en": "\">= 6.0\" allows any future major version to be installed on the next init, including one that changed a default behavior. Pinning to an exact version (e.g. \"= 6.14.0\") means the provider only changes when a human deliberately bumps it after reading the changelog, not silently on a routine init.",
+        "fr": "« >= 6.0 » autorise l'installation de n'importe quelle future version majeure au prochain init, y compris une qui aurait changé un comportement par défaut. Épingler une version exacte (par ex. « = 6.14.0 ») garantit que le provider ne change que lorsqu'un humain le monte délibérément après avoir lu le changelog, pas silencieusement lors d'un init de routine."
+      },
+      "difficulty": 2
+    },
+    {
+      "id": "ex-whats-new-preview-billing-surprise",
+      "kind": "predict-output",
+      "prompt": {
+        "en": "A team started using Agent Runtime and Memory Bank in November 2025 while both were free during preview, and never revisited the budget. What shows up on their invoice for February 2026?",
+        "fr": "Une équipe a commencé à utiliser Agent Runtime et Memory Bank en novembre 2025, alors que les deux étaient gratuits en preview, et n'a jamais revu son budget. Que voit-on apparaître sur leur facture de février 2026 ?"
+      },
+      "choices": [
+        {
+          "id": "a",
+          "label": {
+            "en": "No change — preview-era usage stays free forever, even after GA",
+            "fr": "Aucun changement — l'usage de l'ère preview reste gratuit pour toujours, même après la GA"
+          }
+        },
+        {
+          "id": "b",
+          "label": {
+            "en": "New charges for Agent Runtime, Sessions, Memory Bank and Code Execution, since metered billing for these started in February 2026",
+            "fr": "De nouveaux frais pour Agent Runtime, Sessions, Memory Bank et Code Execution, car la facturation à l'usage de ces éléments a démarré en février 2026"
+          }
+        },
+        {
+          "id": "c",
+          "label": {
+            "en": "A one-time migration fee only, with usage remaining free",
+            "fr": "Uniquement des frais de migration ponctuels, l'usage restant gratuit"
+          }
+        },
+        {
+          "id": "d",
+          "label": {
+            "en": "The features are automatically disabled until the team opts into billing",
+            "fr": "Les fonctionnalités sont automatiquement désactivées jusqu'à ce que l'équipe accepte la facturation"
+          }
+        }
+      ],
+      "answerId": "b",
+      "explanation": {
+        "en": "Metered billing for Agent Runtime, Sessions, Memory Bank and Code Execution began in February 2026, regardless of when a team first adopted them during the free preview window. A budget built entirely off the preview period, never revisited, gets the surprise on exactly the invoice covering that first metered month.",
+        "fr": "La facturation à l'usage d'Agent Runtime, Sessions, Memory Bank et Code Execution a démarré en février 2026, quelle que soit la date à laquelle une équipe les a adoptés pendant la fenêtre de preview gratuite. Un budget construit entièrement sur la période de preview, jamais revu, a la surprise exactement sur la facture couvrant ce premier mois facturé."
+      },
+      "difficulty": 3
+    }
+  ]
+}

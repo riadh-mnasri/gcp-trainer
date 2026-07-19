@@ -15,6 +15,11 @@
       "version": "2026-07",
       "date": "2026-07-20",
       "note": "Data & analytics, messaging & eventing, observability & SRE, DevOps & IaC and ML & AI modules added: 11 modules available, 1 planned."
+    },
+    {
+      "version": "2026-07",
+      "date": "2026-07-20",
+      "note": "What's new on GCP module added, covering the Cloud Next '26 Vertex AI -> Gemini Enterprise Agent Platform shift, the deprecation policy, and 2026 pricing changes: all 12 modules available."
     }
   ]
 }

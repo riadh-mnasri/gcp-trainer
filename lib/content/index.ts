@@ -17,6 +17,12 @@ import storage from "@/content/packs/gcp/modules/storage.json";
 import databases from "@/content/packs/gcp/modules/databases.json";
 import networking from "@/content/packs/gcp/modules/networking.json";
 import iamSecurity from "@/content/packs/gcp/modules/iam-security.json";
+import dataAnalytics from "@/content/packs/gcp/modules/data-analytics.json";
+import serverlessMessaging from "@/content/packs/gcp/modules/serverless-messaging.json";
+import observabilitySre from "@/content/packs/gcp/modules/observability-sre.json";
+import devopsIac from "@/content/packs/gcp/modules/devops-iac.json";
+import mlAi from "@/content/packs/gcp/modules/ml-ai.json";
+import whatsNew from "@/content/packs/gcp/modules/whats-new.json";
 
 export const pack = packManifest as unknown as Pack;
 
@@ -28,6 +34,12 @@ const modules: Record<string, Module> = {
   [databases.id]: databases as unknown as Module,
   [networking.id]: networking as unknown as Module,
   [iamSecurity.id]: iamSecurity as unknown as Module,
+  [dataAnalytics.id]: dataAnalytics as unknown as Module,
+  [serverlessMessaging.id]: serverlessMessaging as unknown as Module,
+  [observabilitySre.id]: observabilitySre as unknown as Module,
+  [devopsIac.id]: devopsIac as unknown as Module,
+  [mlAi.id]: mlAi as unknown as Module,
+  [whatsNew.id]: whatsNew as unknown as Module,
 };
 
 export function getModule(id: string): Module | undefined {

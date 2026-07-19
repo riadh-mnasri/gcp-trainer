@@ -124,7 +124,7 @@ another app:
 
 ## Content status
 
-The GCP pack targets 12 modules; content is written incrementally.
+The GCP pack covers all 12 planned modules.
 
 | Module | Status |
 | --- | --- |
@@ -139,7 +139,7 @@ The GCP pack targets 12 modules; content is written incrementally.
 | Observability & SRE | Available |
 | DevOps & IaC | Available |
 | ML & AI | Available |
-| What's new on GCP | Planned |
+| What's new on GCP | Available |
 
 See `content/packs/gcp/pack.json` for the source of truth.
 

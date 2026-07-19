@@ -40,6 +40,9 @@ yarn-error.log*
 # local tooling notes
 CLAUDE.md
 AGENTS.md
+/.claude/worktrees/
+/.agents/
+skills-lock.json
 
 # vercel
 .vercel

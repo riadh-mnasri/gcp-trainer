@@ -1,0 +1,745 @@
+{
+  "id": "ml-ai",
+  "title": { "en": "ML & AI", "fr": "ML & IA" },
+  "tagline": {
+    "en": "Vertex AI, generative AI, model serving",
+    "fr": "Vertex AI, IA générative, serving de modèles"
+  },
+  "icon": "🤖",
+  "lessons": [
+    {
+      "id": "ml-ai-platform-overview",
+      "title": {
+        "en": "Vertex AI: the unified ML platform",
+        "fr": "Vertex AI : la plateforme ML unifiée"
+      },
+      "minutes": 5,
+      "blocks": [
+        {
+          "type": "text",
+          "body": {
+            "en": "Vertex AI consolidates what used to be a scattered set of products (AI Platform, AutoML, several separate APIs) into one platform sharing IAM, networking, logging and a common SDK: Workbench for notebooks, Training for custom jobs, Pipelines for orchestration, Feature Store for consistent online/offline features, Model Registry for versioning, Endpoints for serving. The pitch to a client: one place to track lineage from data to a deployed model instead of stitching bespoke infra together.",
+            "fr": "Vertex AI regroupe ce qui était autrefois un ensemble dispersé de produits (AI Platform, AutoML, plusieurs API séparées) en une seule plateforme partageant IAM, réseau, logging et un SDK commun : Workbench pour les notebooks, Training pour les jobs personnalisés, Pipelines pour l'orchestration, Feature Store pour des features cohérentes en ligne/hors ligne, Model Registry pour le versionnage, Endpoints pour le serving. L'argument client : un seul endroit pour tracer la lignée des données jusqu'au modèle déployé, plutôt que d'assembler une infra maison au coup par coup."
+          }
+        },
+        {
+          "type": "text",
+          "body": {
+            "en": "AutoML vs custom training is the first fork in the road for every project: AutoML (tables, vision, NLP, forecasting) trains a competent model from labeled data with no code, in hours, at a flat job cost — right when the team lacks ML engineers, the schedule is tight, and \"good enough\" beats \"state of the art\". Custom training earns its keep when you need a specific architecture, transfer learning from a proprietary base model, tight latency/cost control, or accuracy AutoML's black box can't reach. Seniority shows in defaulting to AutoML and only reaching for custom when a concrete requirement demands it.",
+            "fr": "AutoML vs entraînement personnalisé est la première bifurcation de tout projet : AutoML (tables, vision, NLP, prévision) entraîne un modèle compétent à partir de données étiquetées sans code, en quelques heures, à coût de job forfaitaire — exactement quand l'équipe manque d'ingénieurs ML, que le planning est serré, et que « suffisamment bon » l'emporte sur « état de l'art ». L'entraînement personnalisé se justifie quand il faut une architecture spécifique, du transfer learning depuis un modèle de base propriétaire, un contrôle fin de la latence/du coût, ou une précision que la boîte noire d'AutoML n'atteint pas. La séniorité se voit dans le réflexe de partir d'AutoML par défaut et de ne basculer vers le custom que lorsqu'une exigence concrète l'impose."
+          }
+        },
+        {
+          "type": "code",
+          "code": "gcloud ai custom-jobs create \\\n  --region=us-central1 \\\n  --display-name=churn-model-v3 \\\n  --worker-pool-spec=machine-type=n1-standard-8,replica-count=1,container-image-uri=europe-west1-docker.pkg.dev/my-app/training/churn:1.0.0",
+          "caption": {
+            "en": "A custom training job is just a container Vertex schedules, logs and tracks — no cluster to run yourself.",
+            "fr": "Un job d'entraînement personnalisé n'est qu'un conteneur que Vertex planifie, journalise et suit — aucun cluster à faire tourner soi-même."
+          }
+        },
+        {
+          "type": "gotcha",
+          "body": {
+            "en": "Vertex AI resources are strictly regional and not all services exist in every region: GPU/TPU availability, Feature Store, and some Model Garden entries are concentrated in a handful of regions (us-central1, europe-west4...). A design that assumes 'europe-west1 has everything Vertex offers' breaks during procurement; check per-service regional availability before committing to a region for a workload with strict data-residency requirements.",
+            "fr": "Les ressources Vertex AI sont strictement régionales et tous les services n'existent pas dans toutes les régions : la disponibilité GPU/TPU, le Feature Store et certaines entrées de Model Garden sont concentrées sur une poignée de régions (us-central1, europe-west4...). Une conception qui suppose que « europe-west1 offre tout ce que propose Vertex » casse au moment de l'approvisionnement ; vérifiez la disponibilité régionale service par service avant de figer une région pour une charge avec des exigences strictes de résidence des données."
+          }
+        },
+        {
+          "type": "tip",
+          "body": {
+            "en": "The Feature Store's real value isn't storage, it's guaranteeing training-serving consistency: the same feature transformation logic computes both the offline training set and the online lookup at serving time, closing the classic 'it worked in the notebook but drifted in prod' gap. Skipping it and duplicating feature logic in two codebases is the single most common cause of silent accuracy degradation reported in postmortems.",
+            "fr": "La vraie valeur du Feature Store n'est pas le stockage, c'est la garantie de cohérence entraînement-serving : la même logique de transformation de features calcule à la fois le jeu d'entraînement hors ligne et la consultation en ligne au moment du serving, ce qui referme l'écart classique « ça marchait dans le notebook mais ça a dérivé en prod ». S'en passer et dupliquer la logique de features dans deux bases de code est la cause la plus fréquente de dégradation silencieuse de précision relevée dans les post-mortems."
+          }
+        }
+      ]
+    },
+    {
+      "id": "ml-ai-training-pipelines",
+      "title": {
+        "en": "Model training & pipelines: containers, distribution, tuning",
+        "fr": "Entraînement de modèles & pipelines : conteneurs, distribution, tuning"
+      },
+      "minutes": 5,
+      "blocks": [
+        {
+          "type": "text",
+          "body": {
+            "en": "Vertex AI Training offers prebuilt containers — one curated image per framework and version (TensorFlow, PyTorch, scikit-learn, XGBoost) where you supply only the training script — or custom containers, your own Dockerfile with full control over system libraries, exotic dependencies, or a specific CUDA/driver combination. For distributed training, Vertex configures the worker pool topology (chief, workers, and parameter servers or a reduction server for gradient aggregation) from a declarative spec; the real bottleneck is almost never compute, it's interconnect — data-parallel training across hosts without a fast network burns most of the theoretical speedup on gradient synchronization.",
+            "fr": "Vertex AI Training propose des conteneurs préconstruits — une image sélectionnée par framework et version (TensorFlow, PyTorch, scikit-learn, XGBoost) où vous ne fournissez que le script d'entraînement — ou des conteneurs personnalisés, votre propre Dockerfile avec un contrôle total sur les bibliothèques système, les dépendances exotiques ou une combinaison CUDA/driver précise. Pour l'entraînement distribué, Vertex configure la topologie du worker pool (chief, workers, et parameter servers ou un reduction server pour l'agrégation des gradients) à partir d'une spécification déclarative ; le vrai goulot n'est presque jamais le calcul, c'est l'interconnexion — un entraînement data-parallel entre hôtes sans réseau rapide consomme l'essentiel du gain théorique dans la synchronisation des gradients."
+          }
+        },
+        {
+          "type": "text",
+          "body": {
+            "en": "Vertex AI Pipelines runs Kubeflow Pipelines (or TFX) definitions serverlessly: each step is a container, no cluster stays alive between runs, and datasets/models/metrics are tracked automatically with full lineage back to the pipeline run that produced them. That is what turns a data scientist's notebook into a production asset — the same DAG, triggered from CI on a schedule or on new data, reproduces last month's model byte-for-byte instead of relying on someone remembering the steps. Hyperparameter tuning jobs plug into this: Vertex Vizier's Bayesian optimization picks the next trial's parameters from earlier results instead of grid search, which matters because every trial is a full training run and costs accordingly.",
+            "fr": "Vertex AI Pipelines exécute des définitions Kubeflow Pipelines (ou TFX) de façon serverless : chaque étape est un conteneur, aucun cluster ne reste actif entre les exécutions, et les datasets/modèles/métriques sont tracés automatiquement avec une lignée complète jusqu'au run de pipeline qui les a produits. C'est ce qui transforme le notebook d'un data scientist en un actif de production — le même DAG, déclenché depuis la CI selon un planning ou sur de nouvelles données, reproduit le modèle du mois dernier à l'identique au lieu de dépendre de quelqu'un qui se souvient des étapes. Le tuning d'hyperparamètres se branche là-dessus : l'optimisation bayésienne de Vertex Vizier choisit les paramètres du prochain essai à partir des résultats précédents plutôt qu'une recherche en grille — ce qui compte, car chaque essai est un entraînement complet et coûte en conséquence."
+          }
+        },
+        {
+          "type": "code",
+          "code": "gcloud ai hp-tuning-jobs create \\\n  --region=us-central1 \\\n  --display-name=churn-tuning \\\n  --config=hp-tuning-config.yaml \\\n  --max-trial-count=20 \\\n  --parallel-trial-count=4",
+          "caption": {
+            "en": "20 trials at 4 in parallel: Vizier proposes each trial from what previous ones learned, not a blind grid.",
+            "fr": "20 essais à 4 en parallèle : Vizier propose chaque essai à partir de ce qu'ont appris les précédents, pas une grille aveugle."
+          }
+        },
+        {
+          "type": "gotcha",
+          "body": {
+            "en": "Hyperparameter tuning cost is trials × single-training-job cost, not a flat surcharge — a 20-trial search over a model that takes 2 GPU-hours to train is 40 GPU-hours before you've kept a single model. Cap max-trial-count and parallel-trial-count from a budget, not from curiosity, and consider running a cheap proxy (fewer epochs, a data subset) to narrow the search space before the full-scale tuning job.",
+            "fr": "Le coût du tuning d'hyperparamètres est essais × coût d'un entraînement unique, pas un supplément forfaitaire — une recherche à 20 essais sur un modèle qui prend 2 heures-GPU à entraîner représente 40 heures-GPU avant même d'avoir conservé un seul modèle. Plafonnez max-trial-count et parallel-trial-count depuis un budget, pas par curiosité, et envisagez un proxy bon marché (moins d'epochs, un sous-ensemble de données) pour resserrer l'espace de recherche avant le job de tuning à pleine échelle."
+          }
+        },
+        {
+          "type": "tip",
+          "body": {
+            "en": "Reach for custom training and manual hyperparameter tuning only when AutoML's built-in search (which already tunes architecture and hyperparameters internally) has been tried and falls short on a documented metric. Standing up custom containers and a Vizier study is real engineering effort — spend it once AutoML's ceiling is the actual blocker, not by default.",
+            "fr": "Ne recourez à l'entraînement personnalisé et au tuning manuel d'hyperparamètres qu'après avoir essayé la recherche intégrée d'AutoML (qui règle déjà architecture et hyperparamètres en interne) et constaté qu'elle plafonne sur une métrique documentée. Monter des conteneurs personnalisés et une étude Vizier est un effort d'ingénierie réel — dépensez-le une fois que le plafond d'AutoML est le vrai blocage, pas par défaut."
+          }
+        }
+      ]
+    },
+    {
+      "id": "ml-ai-serving",
+      "title": {
+        "en": "Model serving: online endpoints and batch prediction",
+        "fr": "Serving de modèles : endpoints en ligne et prédiction batch"
+      },
+      "minutes": 5,
+      "blocks": [
+        {
+          "type": "text",
+          "body": {
+            "en": "A Vertex AI Endpoint deploys one or more model versions behind a stable URL and autoscales replicas on CPU/GPU utilization or request count, similar in spirit to Cloud Run but for prediction containers with GPU/TPU accelerators attached. Traffic splitting lets two model versions share one endpoint with an explicit percentage split (e.g. 95/5) — the standard canary pattern: watch latency and business metrics on the 5% before ramping, and roll back by moving the split to zero rather than redeploying.",
+            "fr": "Un Endpoint Vertex AI déploie une ou plusieurs versions de modèle derrière une URL stable et fait de l'autoscaling des réplicas selon l'utilisation CPU/GPU ou le nombre de requêtes, dans un esprit proche de Cloud Run mais pour des conteneurs de prédiction avec accélérateurs GPU/TPU. Le traffic splitting permet à deux versions de modèle de partager un même endpoint avec un pourcentage explicite (par ex. 95/5) — le motif canary standard : surveiller latence et métriques métier sur les 5 % avant de monter en charge, et revenir en arrière en ramenant le split à zéro plutôt qu'en redéployant."
+          }
+        },
+        {
+          "type": "text",
+          "body": {
+            "en": "Batch prediction reads a dataset (BigQuery table, GCS files), scores it offline with no endpoint to keep running, and writes results back — the right tool whenever a human or a downstream job doesn't need the answer within milliseconds. The cost trade-off is stark: an always-on endpoint with a GPU bills for every hour it exists whether or not it serves traffic, while a batch job with the same accelerator bills only for the minutes it runs. A nightly scoring job on 2 million rows is batch prediction's textbook case; a checkout-time fraud score is not.",
+            "fr": "La prédiction batch lit un dataset (table BigQuery, fichiers GCS), le score hors ligne sans aucun endpoint à maintenir en marche, et réécrit les résultats — le bon outil dès qu'un humain ou un job en aval n'a pas besoin de la réponse à la milliseconde. Le compromis de coût est net : un endpoint permanent avec un GPU facture chaque heure d'existence, qu'il serve du trafic ou non, tandis qu'un job batch avec le même accélérateur ne facture que les minutes d'exécution. Un scoring nocturne sur 2 millions de lignes est le cas d'école de la prédiction batch ; un score de fraude au moment du paiement ne l'est pas."
+          }
+        },
+        {
+          "type": "code",
+          "code": "gcloud ai endpoints deploy-model $ENDPOINT_ID \\\n  --region=europe-west4 \\\n  --model=$MODEL_ID_V2 \\\n  --display-name=fraud-v2 \\\n  --traffic-split=0=95,$MODEL_ID_V2=5 \\\n  --machine-type=n1-standard-4 \\\n  --accelerator=type=nvidia-tesla-t4,count=1 \\\n  --min-replica-count=1 --max-replica-count=5",
+          "caption": {
+            "en": "5% canary on v2 while v1 (model id 0 = existing deployment) still serves 95%.",
+            "fr": "5 % de canary sur v2 pendant que v1 (id de modèle 0 = déploiement existant) sert encore 95 %."
+          }
+        },
+        {
+          "type": "gotcha",
+          "body": {
+            "en": "Endpoints cannot scale to zero: min-replica-count must be at least 1, so a GPU-backed endpoint bills continuously even at 3 a.m. with no traffic — there is no Cloud Run-style idle discount. Teams that copy the 'scale to zero saves money' reflex from Cloud Run onto Vertex endpoints get an unpleasant invoice; if traffic is bursty or low-volume, batch prediction or a scheduled deploy/undeploy is usually cheaper than an always-on endpoint.",
+            "fr": "Les endpoints ne peuvent pas descendre à zéro : min-replica-count doit être au moins 1, donc un endpoint adossé à un GPU facture en continu même à 3 h du matin sans trafic — il n'existe pas de remise à l'inactivité façon Cloud Run. Les équipes qui transposent le réflexe « le scale-to-zero économise » de Cloud Run vers les endpoints Vertex reçoivent une facture désagréable ; si le trafic est en rafales ou faible volume, la prédiction batch ou un déploiement/annulation planifié est généralement moins cher qu'un endpoint permanent."
+          }
+        },
+        {
+          "type": "tip",
+          "body": {
+            "en": "Size the autoscaling metric to the actual bottleneck: CPU-based endpoints usually track request count or CPU utilization well, but GPU-backed endpoints should scale on GPU duty cycle — CPU utilization on a GPU-bound model stays flat while GPU queues back up and latency quietly climbs. Load-test with production-shaped payloads before trusting the default threshold.",
+            "fr": "Dimensionnez la métrique d'autoscaling sur le vrai goulot : les endpoints CPU suivent en général bien le nombre de requêtes ou l'utilisation CPU, mais les endpoints adossés à un GPU doivent s'ajuster sur le taux d'utilisation GPU — l'utilisation CPU d'un modèle GPU-bound reste plate pendant que les files GPU s'accumulent et que la latence grimpe en silence. Testez en charge avec des payloads à l'image de la production avant de faire confiance au seuil par défaut."
+          }
+        }
+      ]
+    },
+    {
+      "id": "ml-ai-genai",
+      "title": {
+        "en": "Generative AI on Vertex AI",
+        "fr": "IA générative sur Vertex AI"
+      },
+      "minutes": 5,
+      "blocks": [
+        {
+          "type": "text",
+          "body": {
+            "en": "Model Garden is Vertex AI's catalog of foundation models: Google's own general-purpose models, open models, and third-party models, each either called as a fully hosted API (no infrastructure, pay per request/token, the default access pattern for a client project) or deployed to a dedicated endpoint when you need guaranteed capacity, data residency, or a fine-tuned checkpoint. The decision that matters isn't which model scores highest on a benchmark this quarter — that ranking changes constantly — it's which access pattern matches the workload's latency, volume and governance requirements.",
+            "fr": "Model Garden est le catalogue de Vertex AI pour les modèles fondation : les modèles généralistes de Google, des modèles ouverts et des modèles tiers, chacun accessible soit comme une API entièrement hébergée (aucune infrastructure, paiement à la requête/au token, le motif d'accès par défaut pour un projet client), soit déployé sur un endpoint dédié quand il faut une capacité garantie, une résidence des données ou un checkpoint fine-tuné. La décision qui compte n'est pas quel modèle score le mieux sur un benchmark ce trimestre — ce classement change sans cesse — mais quel motif d'accès correspond à la latence, au volume et aux exigences de gouvernance de la charge."
+          }
+        },
+        {
+          "type": "text",
+          "body": {
+            "en": "Grounding — retrieval-augmented generation (RAG) or a built-in grounding service that checks answers against a trusted corpus or live search — is the standard mitigation for hallucination: instead of trusting the model's parametric memory, you retrieve relevant passages at query time and instruct the model to answer from them, then can cite sources. It doesn't eliminate hallucination, it bounds it to the retrieved context, which is why RAG pipelines still need retrieval quality metrics (are the right passages found at all?) as much as generation metrics.",
+            "fr": "Le grounding — la génération augmentée par récupération (RAG) ou un service de grounding intégré qui vérifie les réponses par rapport à un corpus de confiance ou une recherche en direct — est la mitigation standard de l'hallucination : plutôt que de faire confiance à la mémoire paramétrique du modèle, on récupère des passages pertinents au moment de la requête et on demande au modèle de répondre à partir d'eux, avec citation des sources possible. Cela n'élimine pas l'hallucination, cela la borne au contexte récupéré, raison pour laquelle les pipelines RAG ont autant besoin de métriques de qualité de récupération (trouve-t-on seulement les bons passages ?) que de métriques de génération."
+          }
+        },
+        {
+          "type": "code",
+          "code": "curl -X POST \\\n  \"https://us-central1-aiplatform.googleapis.com/v1/projects/my-app/locations/us-central1/publishers/google/models/MODEL:generateContent\" \\\n  -H \"Authorization: Bearer $(gcloud auth print-access-token)\" \\\n  -d '{\n    \"contents\": [{\"role\": \"user\", \"parts\": [{\"text\": \"Refund policy for order 4821?\"}]}],\n    \"tools\": [{\"retrieval\": {\"vertexAiSearch\": {\"datastore\": \"projects/my-app/locations/global/dataStores/support-kb\"}}}]\n  }'",
+          "caption": {
+            "en": "Grounding via a search datastore: the model answers from support-kb, not from memory.",
+            "fr": "Grounding via un datastore de recherche : le modèle répond depuis support-kb, pas depuis sa mémoire."
+          }
+        },
+        {
+          "type": "gotcha",
+          "body": {
+            "en": "Prompt and response logging is on by default for most hosted APIs (useful for debugging and audit) but is itself a data governance decision: logged prompts can contain customer PII or proprietary data and land in a location/retention regime the client may not have signed off on. Confirm logging scope, region and retention before sending production traffic — this is a contractual conversation, not just a technical toggle, and safety filters (which can block or redact legitimate outputs, e.g. medical or security content) need the same explicit review rather than being left on defaults blindly.",
+            "fr": "La journalisation des prompts et réponses est activée par défaut sur la plupart des API hébergées (utile pour le debug et l'audit) mais constitue elle-même une décision de gouvernance des données : les prompts journalisés peuvent contenir des PII clients ou des données propriétaires et atterrir dans une région/un régime de rétention que le client n'a pas forcément validé. Confirmez le périmètre, la région et la rétention du logging avant d'envoyer du trafic de production — c'est une conversation contractuelle, pas juste un interrupteur technique — et les filtres de sécurité (qui peuvent bloquer ou expurger des sorties légitimes, par ex. du contenu médical ou sécurité) méritent la même revue explicite plutôt qu'être laissés aux réglages par défaut sans y penser."
+          }
+        },
+        {
+          "type": "tip",
+          "body": {
+            "en": "Before wiring RAG to a vector search over the whole document corpus, ask whether the fix is smaller: a well-structured system prompt, a shorter and cleaner knowledge base, or simply increasing context window usage may match RAG's win rate on a small corpus for a fraction of the engineering cost. RAG earns its complexity at a corpus size or update frequency that makes 'stuff it all in the prompt' impractical.",
+            "fr": "Avant de brancher un RAG sur une recherche vectorielle de tout le corpus documentaire, demandez-vous si le correctif est plus modeste : un system prompt bien structuré, une base de connaissances plus courte et plus propre, ou simplement l'usage accru de la fenêtre de contexte peut égaler le taux de succès du RAG sur un petit corpus pour une fraction du coût d'ingénierie. Le RAG mérite sa complexité à partir d'une taille de corpus ou d'une fréquence de mise à jour qui rend « tout mettre dans le prompt » impraticable."
+          }
+        }
+      ]
+    },
+    {
+      "id": "ml-ai-choosing-gotchas",
+      "title": {
+        "en": "Choosing an approach — and the gotchas that bite",
+        "fr": "Choisir une approche — et les pièges qui mordent"
+      },
+      "minutes": 5,
+      "blocks": [
+        {
+          "type": "text",
+          "body": {
+            "en": "The build-vs-buy decision for ML mirrors compute's control spectrum: Model Garden's hosted APIs (zero training, pay per call) at one end, AutoML (train on your data, no ML engineering) in the middle, fully custom architectures and training pipelines at the other. Move rightward only when a documented requirement — proprietary domain knowledge no foundation model has, a hard latency/cost target inference APIs can't hit, or IP the client wants to own outright — forces it; every step right is a step from 'weeks to a working model' toward 'a standing ML engineering team'.",
+            "fr": "La décision build-vs-buy en ML reflète le spectre de contrôle du calcul : les API hébergées de Model Garden (zéro entraînement, paiement à l'appel) à une extrémité, AutoML (entraîner sur vos données, aucune ingénierie ML) au milieu, les architectures et pipelines d'entraînement entièrement personnalisés à l'autre extrémité. Ne vous déplacez vers la droite que lorsqu'une exigence documentée — une connaissance métier propriétaire qu'aucun modèle fondation ne possède, une cible de latence/coût que les API d'inférence ne peuvent tenir, ou une propriété intellectuelle que le client veut posséder en propre — l'impose ; chaque pas vers la droite est un pas de « des semaines pour un modèle fonctionnel » vers « une équipe d'ingénierie ML permanente »."
+          }
+        },
+        {
+          "type": "text",
+          "body": {
+            "en": "Two operational failure modes recur across engagements. First, idle accelerators: a GPU/TPU endpoint or notebook instance left running over a weekend or after a project pauses bills the full rate regardless of use — the same discipline that stops static IPs and orphaned disks from bleeding a compute budget applies here, amplified because accelerators cost far more per hour. Second, training data governance: a model trained on data the client didn't clear for that purpose (customer records outside their consent scope, third-party content without a license) creates legal exposure the moment the model ships, and it can't be retroactively fixed by deleting the dataset — the model itself may have memorized it.",
+            "fr": "Deux modes de défaillance opérationnelle reviennent d'une mission à l'autre. D'abord les accélérateurs inactifs : un endpoint GPU/TPU ou une instance de notebook laissés en marche un week-end ou après la pause d'un projet facturent le tarif plein indépendamment de l'usage — la même discipline qui évite que des IP statiques ou des disques orphelins ne saignent un budget de calcul s'applique ici, amplifiée car les accélérateurs coûtent bien plus cher à l'heure. Ensuite la gouvernance des données d'entraînement : un modèle entraîné sur des données que le client n'a pas validées pour cet usage (données clients hors périmètre de consentement, contenu tiers sans licence) crée une exposition juridique dès que le modèle est mis en service, et cela ne peut pas être corrigé rétroactivement en supprimant le dataset — le modèle lui-même peut l'avoir mémorisé."
+          }
+        },
+        {
+          "type": "code",
+          "code": "# Nightly guard: shut down Workbench instances left running after hours\ngcloud scheduler jobs create http stop-idle-notebooks \\\n  --schedule=\"0 20 * * 1-5\" \\\n  --uri=\"https://us-central1-aiplatform.googleapis.com/v1/projects/my-app/locations/us-central1/notebookRuntimes:stop\" \\\n  --oauth-service-account-email=notebook-janitor@my-app.iam.gserviceaccount.com",
+          "caption": {
+            "en": "Automating the shutdown beats trusting everyone to remember.",
+            "fr": "Automatiser l'extinction vaut mieux que compter sur la mémoire de chacun."
+          }
+        },
+        {
+          "type": "gotcha",
+          "body": {
+            "en": "Evaluating a model after it's already serving production traffic is a common and expensive mistake: by the time a regression, a bias in a protected attribute, or a safety filter miss shows up in an incident, real users have already been affected and the fix competes with an active fire. Held-out test sets, slice-based evaluation (performance broken down by segment, not just an aggregate score), and a human review step on a sample of outputs belong before the traffic-split ramp described earlier, not after it.",
+            "fr": "Évaluer un modèle après qu'il sert déjà du trafic de production est une erreur courante et coûteuse : au moment où une régression, un biais sur un attribut protégé ou un raté de filtre de sécurité apparaît en incident, de vrais utilisateurs ont déjà été affectés et le correctif rivalise avec un feu actif. Les jeux de test isolés, l'évaluation par segment (performance décomposée par tranche, pas seulement un score agrégé) et une revue humaine sur un échantillon de sorties doivent précéder la montée en charge du traffic split décrite plus tôt, pas la suivre."
+          }
+        },
+        {
+          "type": "tip",
+          "body": {
+            "en": "The single question that separates a defensible ML architecture from a fragile one in a technical interview or a client review: 'what happens when this is wrong, and how would we know?' A model with no evaluation gate, no drift monitoring and no rollback plan is a liability regardless of how good its benchmark score looked in the notebook — the operational half of ML is where senior engineers differentiate themselves from a script that trained a model once.",
+            "fr": "La question unique qui distingue une architecture ML défendable d'une architecture fragile en entretien technique ou en revue client : « que se passe-t-il quand c'est faux, et comment le saurions-nous ? » Un modèle sans porte d'évaluation, sans monitoring de dérive et sans plan de retour arrière est un passif, quel que soit le score de benchmark impressionnant dans le notebook — le versant opérationnel du ML est ce qui distingue les ingénieurs seniors d'un script qui a entraîné un modèle une fois."
+          }
+        }
+      ]
+    }
+  ],
+  "flashcards": [
+    {
+      "id": "fc-ml-ai-platform-components",
+      "front": {
+        "en": "Name the core Vertex AI platform components and what each one owns.",
+        "fr": "Citez les composants principaux de la plateforme Vertex AI et ce que chacun couvre."
+      },
+      "back": {
+        "en": "Workbench: managed notebooks. Training: custom training jobs. Pipelines: Kubeflow-based orchestration. Feature Store: consistent online/offline features. Model Registry: versioning and lineage. Endpoints: online/batch serving.",
+        "fr": "Workbench : notebooks managés. Training : jobs d'entraînement personnalisés. Pipelines : orchestration basée sur Kubeflow. Feature Store : features cohérentes en ligne/hors ligne. Model Registry : versionnage et lignée. Endpoints : serving en ligne/batch."
+      }
+    },
+    {
+      "id": "fc-ml-ai-automl-vs-custom",
+      "front": {
+        "en": "When does custom training beat AutoML, and when is that the wrong call?",
+        "fr": "Quand l'entraînement personnalisé bat-il AutoML, et quand est-ce le mauvais choix ?"
+      },
+      "back": {
+        "en": "Custom training wins when you need a specific architecture, transfer learning from a proprietary base model, tight latency/cost control, or accuracy AutoML can't reach — not by default. For standard labeled-data problems on a tight schedule with no ML team, AutoML is the right starting point.",
+        "fr": "L'entraînement personnalisé l'emporte quand il faut une architecture spécifique, du transfer learning depuis un modèle de base propriétaire, un contrôle fin de latence/coût, ou une précision qu'AutoML n'atteint pas — pas par défaut. Pour un problème standard sur données étiquetées, un planning serré et sans équipe ML, AutoML est le bon point de départ."
+      }
+    },
+    {
+      "id": "fc-ml-ai-feature-store",
+      "front": {
+        "en": "What problem does Vertex AI Feature Store actually solve?",
+        "fr": "Quel problème résout réellement le Feature Store de Vertex AI ?"
+      },
+      "back": {
+        "en": "Training-serving skew: the same feature transformation logic feeds both the offline training set and the online lookup at inference time, instead of two codebases silently drifting apart.",
+        "fr": "Le décalage entraînement-serving : la même logique de transformation de features alimente à la fois le jeu d'entraînement hors ligne et la consultation en ligne à l'inférence, au lieu de deux bases de code qui dérivent en silence."
+      }
+    },
+    {
+      "id": "fc-ml-ai-regional-availability",
+      "front": {
+        "en": "Why can't you assume every Vertex AI service is available in your preferred region?",
+        "fr": "Pourquoi ne peut-on pas supposer que tout service Vertex AI est disponible dans la région de son choix ?"
+      },
+      "back": {
+        "en": "GPU/TPU accelerators, Feature Store, and many Model Garden entries are concentrated in a handful of regions. Check per-service regional availability before committing to a region, especially under data-residency constraints.",
+        "fr": "Les accélérateurs GPU/TPU, le Feature Store et de nombreuses entrées de Model Garden sont concentrés sur une poignée de régions. Vérifiez la disponibilité région par région avant de figer un choix, surtout sous contrainte de résidence des données."
+      }
+    },
+    {
+      "id": "fc-ml-ai-containers",
+      "front": {
+        "en": "Prebuilt vs custom training containers on Vertex AI: what's the trade-off?",
+        "fr": "Conteneurs d'entraînement préconstruits vs personnalisés sur Vertex AI : quel est le compromis ?"
+      },
+      "back": {
+        "en": "Prebuilt: a curated framework image, you supply only the script — fast path for standard loops. Custom: your own Dockerfile, full control of system libraries/CUDA/exotic dependencies — earns the Docker overhead when prebuilt images don't fit.",
+        "fr": "Préconstruit : une image de framework sélectionnée, vous ne fournissez que le script — voie rapide pour un entraînement standard. Personnalisé : votre propre Dockerfile, contrôle total des bibliothèques système/CUDA/dépendances exotiques — justifie l'overhead Docker quand les images préconstruites ne conviennent pas."
+      }
+    },
+    {
+      "id": "fc-ml-ai-distributed-bottleneck",
+      "front": {
+        "en": "In distributed data-parallel training, what usually caps the speedup below linear?",
+        "fr": "En entraînement distribué data-parallel, qu'est-ce qui plafonne généralement le gain en dessous du linéaire ?"
+      },
+      "back": {
+        "en": "Interconnect bandwidth for gradient synchronization across replicas, not compute — without a fast network or a reduction server, most of the theoretical speedup is spent syncing gradients.",
+        "fr": "La bande passante d'interconnexion pour la synchronisation des gradients entre réplicas, pas le calcul — sans réseau rapide ni reduction server, l'essentiel du gain théorique part dans la synchro des gradients."
+      }
+    },
+    {
+      "id": "fc-ml-ai-pipelines-lineage",
+      "front": {
+        "en": "What does Vertex AI Pipelines add over running the same steps manually in a notebook?",
+        "fr": "Qu'apporte Vertex AI Pipelines par rapport aux mêmes étapes lancées manuellement dans un notebook ?"
+      },
+      "back": {
+        "en": "Serverless, reproducible orchestration of Kubeflow/TFX steps with automatic artifact tracking and lineage, callable from CI on a schedule or new data — the same DAG reproduces the same model later instead of relying on someone remembering the steps.",
+        "fr": "Une orchestration serverless et reproductible d'étapes Kubeflow/TFX avec suivi automatique des artefacts et de la lignée, déclenchable depuis la CI sur planning ou nouvelles données — le même DAG reproduit le même modèle plus tard au lieu de dépendre de la mémoire de quelqu'un."
+      }
+    },
+    {
+      "id": "fc-ml-ai-hp-tuning-cost",
+      "front": {
+        "en": "How is the total cost of a Vertex AI hyperparameter tuning job computed?",
+        "fr": "Comment se calcule le coût total d'un job de tuning d'hyperparamètres Vertex AI ?"
+      },
+      "back": {
+        "en": "max-trial-count × per-trial training cost, regardless of parallel-trial-count (which only affects wall-clock time, not total trials run or billed).",
+        "fr": "max-trial-count × coût d'un entraînement unique, indépendamment de parallel-trial-count (qui n'affecte que le temps horloge, pas le nombre total d'essais exécutés ou facturés)."
+      }
+    },
+    {
+      "id": "fc-ml-ai-traffic-split",
+      "front": {
+        "en": "How does traffic splitting on a Vertex AI Endpoint enable a canary rollout, and how do you roll back?",
+        "fr": "Comment le traffic splitting sur un Endpoint Vertex AI permet-il un déploiement canary, et comment revient-on en arrière ?"
+      },
+      "back": {
+        "en": "Two model versions share one endpoint with an explicit percentage split (e.g. 95/5); rollback is a config change setting the new version's share to 0%, no redeploy needed.",
+        "fr": "Deux versions de modèle partagent un endpoint avec un split explicite en pourcentage (par ex. 95/5) ; le retour arrière est un simple changement de config ramenant la part de la nouvelle version à 0 %, sans redéploiement."
+      }
+    },
+    {
+      "id": "fc-ml-ai-batch-vs-online-cost",
+      "front": {
+        "en": "Batch prediction vs an always-on endpoint: what's the cost logic for choosing between them?",
+        "fr": "Prédiction batch vs endpoint permanent : quelle est la logique de coût pour choisir ?"
+      },
+      "back": {
+        "en": "An always-on endpoint bills every hour it exists, whether or not it serves traffic. Batch prediction bills only the minutes a job runs. Non-latency-sensitive, periodic scoring belongs in batch; interactive, low-latency needs justify an endpoint.",
+        "fr": "Un endpoint permanent facture chaque heure d'existence, qu'il serve du trafic ou non. La prédiction batch ne facture que les minutes d'exécution du job. Un scoring périodique non sensible à la latence relève du batch ; un besoin interactif à faible latence justifie un endpoint."
+      }
+    },
+    {
+      "id": "fc-ml-ai-no-scale-zero",
+      "front": {
+        "en": "Why can't a Vertex AI Endpoint replicate Cloud Run's 'scale to zero saves money' pattern?",
+        "fr": "Pourquoi un Endpoint Vertex AI ne peut-il pas reproduire le motif « scale-to-zero économise » de Cloud Run ?"
+      },
+      "back": {
+        "en": "min-replica-count must be at least 1: an endpoint always keeps at least one replica running and billing, even with zero traffic — there is no idle discount like Cloud Run's.",
+        "fr": "min-replica-count doit être au moins 1 : un endpoint garde toujours au moins un réplica en marche et facturé, même sans trafic — il n'existe pas de remise à l'inactivité comme sur Cloud Run."
+      }
+    },
+    {
+      "id": "fc-ml-ai-model-garden-access",
+      "front": {
+        "en": "Model Garden: what are the two main access patterns for a model, and when does each apply?",
+        "fr": "Model Garden : quels sont les deux principaux motifs d'accès à un modèle, et quand chacun s'applique-t-il ?"
+      },
+      "back": {
+        "en": "Hosted API call: no infrastructure, pay per request/token — the default for most projects. Dedicated endpoint deployment: needed for guaranteed capacity, data residency, or a fine-tuned checkpoint.",
+        "fr": "Appel d'API hébergée : aucune infrastructure, paiement à la requête/au token — le défaut pour la plupart des projets. Déploiement sur endpoint dédié : nécessaire pour une capacité garantie, la résidence des données, ou un checkpoint fine-tuné."
+      }
+    },
+    {
+      "id": "fc-ml-ai-grounding-limits",
+      "front": {
+        "en": "Does grounding/RAG eliminate hallucination? What does it actually do, and what still needs measuring?",
+        "fr": "Le grounding/RAG élimine-t-il l'hallucination ? Que fait-il réellement, et que faut-il encore mesurer ?"
+      },
+      "back": {
+        "en": "No — it bounds hallucination to the retrieved context by having the model answer from retrieved passages instead of parametric memory. Retrieval quality (are the right passages even found?) must be measured alongside generation quality.",
+        "fr": "Non — il borne l'hallucination au contexte récupéré en faisant répondre le modèle à partir de passages récupérés plutôt que de sa mémoire paramétrique. La qualité de la récupération (trouve-t-on seulement les bons passages ?) doit être mesurée au même titre que la qualité de la génération."
+      }
+    },
+    {
+      "id": "fc-ml-ai-build-vs-buy",
+      "front": {
+        "en": "Lay out the ML build-vs-buy spectrum from least to most engineering effort, and what justifies moving up it.",
+        "fr": "Détaillez le spectre build-vs-buy en ML du moins au plus d'effort d'ingénierie, et ce qui justifie d'y avancer."
+      },
+      "back": {
+        "en": "Model Garden hosted APIs → AutoML → fully custom architecture/training. Move up only when a documented requirement (proprietary domain knowledge, a hard latency/cost target, or IP ownership) forces it, not by default.",
+        "fr": "API hébergées de Model Garden → AutoML → architecture/entraînement entièrement personnalisés. N'avancez que lorsqu'une exigence documentée (connaissance métier propriétaire, cible de latence/coût stricte, ou volonté de posséder la propriété intellectuelle) l'impose, pas par défaut."
+      }
+    }
+  ],
+  "exercises": [
+    {
+      "id": "ex-ml-ai-automl-or-custom",
+      "kind": "mcq",
+      "prompt": {
+        "en": "A 2-person team must ship a churn-prediction model from a clean labeled BigQuery table in three weeks, with no dedicated ML engineer on staff. What is the right starting point?",
+        "fr": "Une équipe de 2 personnes doit livrer un modèle de prédiction de churn à partir d'une table BigQuery étiquetée et propre, en trois semaines, sans ingénieur ML dédié. Quel est le bon point de départ ?"
+      },
+      "choices": [
+        {
+          "id": "a",
+          "label": { "en": "Vertex AI AutoML Tables", "fr": "Vertex AI AutoML Tables" }
+        },
+        {
+          "id": "b",
+          "label": {
+            "en": "A custom PyTorch training job with a hand-tuned architecture",
+            "fr": "Un job d'entraînement PyTorch personnalisé avec une architecture réglée à la main"
+          }
+        },
+        {
+          "id": "c",
+          "label": {
+            "en": "A multi-node distributed training pipeline on GKE",
+            "fr": "Un pipeline d'entraînement distribué multi-nœuds sur GKE"
+          }
+        },
+        {
+          "id": "d",
+          "label": {
+            "en": "Fine-tune a large foundation model from Model Garden on the labels",
+            "fr": "Fine-tuner un grand modèle fondation de Model Garden sur les étiquettes"
+          }
+        }
+      ],
+      "answerId": "a",
+      "explanation": {
+        "en": "AutoML Tables trains directly from labeled tabular data with no ML engineering, in hours, well inside three weeks, and is built for exactly this profile (small team, tight deadline, no bespoke architecture requirement). Custom training and distributed pipelines add engineering effort with no stated need for it; fine-tuning a foundation model is the wrong tool for structured tabular churn data, which isn't language or vision, and adds cost and complexity AutoML doesn't need.",
+        "fr": "AutoML Tables s'entraîne directement sur des données tabulaires étiquetées sans ingénierie ML, en quelques heures, largement dans les trois semaines, et cible exactement ce profil (petite équipe, planning serré, pas de besoin d'architecture sur mesure). L'entraînement personnalisé et les pipelines distribués ajoutent un effort d'ingénierie sans besoin exprimé ; fine-tuner un modèle fondation est le mauvais outil pour du churn tabulaire structuré, qui n'est ni du langage ni de la vision, et ajoute coût et complexité qu'AutoML n'exige pas."
+      },
+      "difficulty": 1
+    },
+    {
+      "id": "ex-ml-ai-batch-vs-endpoint-cost",
+      "kind": "mcq",
+      "prompt": {
+        "en": "A retailer wants monthly churn scores for its full customer base (3M rows) recomputed at the start of each month; nothing time-sensitive, no interactive querying. An engineer proposes a GPU-backed Vertex AI Endpoint with min-replica-count=1 running all month. What's the better call and why?",
+        "fr": "Un distributeur veut des scores de churn mensuels pour toute sa base client (3 M de lignes), recalculés en début de mois ; rien n'est urgent, pas de requêtage interactif. Un ingénieur propose un Endpoint Vertex AI adossé à un GPU avec min-replica-count=1 tournant tout le mois. Quel est le meilleur choix, et pourquoi ?"
+      },
+      "choices": [
+        {
+          "id": "a",
+          "label": { "en": "Keep the endpoint, it's simpler to operate", "fr": "Garder l'endpoint, c'est plus simple à exploiter" }
+        },
+        {
+          "id": "b",
+          "label": {
+            "en": "Batch prediction run once a month against the dataset — no standing endpoint to bill between runs",
+            "fr": "Une prédiction batch lancée une fois par mois sur le dataset — aucun endpoint permanent à facturer entre les exécutions"
+          }
+        },
+        {
+          "id": "c",
+          "label": {
+            "en": "An endpoint with max-replica-count=1 to limit cost",
+            "fr": "Un endpoint avec max-replica-count=1 pour limiter le coût"
+          }
+        },
+        {
+          "id": "d",
+          "label": {
+            "en": "A Cloud Run service polling the model hourly",
+            "fr": "Un service Cloud Run interrogeant le modèle toutes les heures"
+          }
+        }
+      ],
+      "answerId": "b",
+      "explanation": {
+        "en": "Batch prediction reads the dataset, scores it offline, writes the results, with no infrastructure active between jobs — it matches the workload's monthly, non-interactive shape and bills only for the minutes the job runs, versus a GPU endpoint billed 24/7 for a job that runs once a month. Capping max-replica-count doesn't remove the standing min-replica-count=1 baseline cost; a Cloud Run service polling a model endpoint would still leave the same idle endpoint underneath.",
+        "fr": "La prédiction batch lit le dataset, le score hors ligne, écrit les résultats, sans aucune infrastructure active entre les jobs — elle correspond au rythme mensuel et non interactif de la charge et ne facture que les minutes d'exécution, contre un endpoint GPU facturé 24 h/24 pour un job qui tourne une fois par mois. Plafonner max-replica-count ne supprime pas le coût de base de min-replica-count=1 en permanence ; un service Cloud Run interrogeant un endpoint de modèle laisserait le même endpoint inactif sous-jacent."
+      },
+      "difficulty": 2
+    },
+    {
+      "id": "ex-ml-ai-canary-rollback",
+      "kind": "mcq",
+      "prompt": {
+        "en": "A new model version deployed at a 5% traffic split on an existing endpoint starts showing a latency regression in monitoring 10 minutes after deploy. What's the correct rollback action?",
+        "fr": "Une nouvelle version de modèle déployée à 5 % de trafic sur un endpoint existant montre une régression de latence dans le monitoring 10 minutes après le déploiement. Quelle est l'action de retour arrière correcte ?"
+      },
+      "choices": [
+        {
+          "id": "a",
+          "label": {
+            "en": "Redeploy the previous model version from scratch",
+            "fr": "Redéployer la version précédente du modèle depuis zéro"
+          }
+        },
+        {
+          "id": "b",
+          "label": {
+            "en": "Update the endpoint's traffic split to route 0% to the new version",
+            "fr": "Mettre à jour le traffic split de l'endpoint pour router 0 % vers la nouvelle version"
+          }
+        },
+        {
+          "id": "c",
+          "label": { "en": "Delete the endpoint and recreate it", "fr": "Supprimer l'endpoint et le recréer" }
+        },
+        {
+          "id": "d",
+          "label": {
+            "en": "Lower max-replica-count on the new version to reduce its load",
+            "fr": "Baisser max-replica-count sur la nouvelle version pour réduire sa charge"
+          }
+        }
+      ],
+      "answerId": "b",
+      "explanation": {
+        "en": "Traffic splitting is precisely designed so rollback is a config change, not a redeploy: setting the new version's share to 0% (or the old version's back to 100%) stops traffic reaching it within the propagation delay, no rebuild needed. Redeploying or recreating the endpoint is slower and riskier than a traffic-split change; reducing max-replica-count doesn't stop the regression, it just constrains how many bad-latency replicas can exist.",
+        "fr": "Le traffic splitting est conçu précisément pour que le retour arrière soit un changement de config, pas un redéploiement : ramener la part de la nouvelle version à 0 % (ou celle de l'ancienne à 100 %) arrête le trafic vers elle dans le délai de propagation, sans reconstruction. Redéployer ou recréer l'endpoint est plus lent et plus risqué qu'un changement de split ; réduire max-replica-count ne stoppe pas la régression, cela ne fait que limiter le nombre de réplicas en mauvaise latence pouvant exister."
+      },
+      "difficulty": 2
+    },
+    {
+      "id": "ex-ml-ai-distributed-training-output",
+      "kind": "predict-output",
+      "prompt": {
+        "en": "A team runs data-parallel training across 8 GPU workers on 8 separate low-bandwidth VMs (no reduction server, standard networking), expecting roughly 8x speedup over a single GPU. What actually happens?",
+        "fr": "Une équipe entraîne en data-parallel sur 8 workers GPU répartis sur 8 VM séparées à faible bande passante (pas de reduction server, réseau VPC standard), en espérant environ un facteur 8 par rapport à un seul GPU. Que se passe-t-il réellement ?"
+      },
+      "code": "worker-pool-spec:\n  - machine-type: n1-standard-8\n    accelerator-type: NVIDIA_TESLA_T4\n    accelerator-count: 1\n    replica-count: 8\n# no reduction server configured, standard VPC networking between workers",
+      "choices": [
+        {
+          "id": "a",
+          "label": {
+            "en": "Training completes in almost exactly 1/8th the time",
+            "fr": "L'entraînement se termine en presque exactement 1/8 du temps"
+          }
+        },
+        {
+          "id": "b",
+          "label": {
+            "en": "Training speeds up but well below 8x — most extra time goes into gradient synchronization over the slow network",
+            "fr": "L'entraînement accélère mais bien en dessous d'un facteur 8 — l'essentiel du temps supplémentaire part dans la synchronisation des gradients sur le réseau lent"
+          }
+        },
+        {
+          "id": "c",
+          "label": {
+            "en": "The job fails to start because 8 replicas require a reduction server",
+            "fr": "Le job ne démarre pas car 8 réplicas exigent un reduction server"
+          }
+        },
+        {
+          "id": "d",
+          "label": {
+            "en": "Each worker trains an independent model and results are averaged at the end automatically",
+            "fr": "Chaque worker entraîne un modèle indépendant et les résultats sont moyennés automatiquement à la fin"
+          }
+        }
+      ],
+      "answerId": "b",
+      "explanation": {
+        "en": "Data-parallel training needs to synchronize gradients across replicas every step; without a fast interconnect or a reduction server to aggregate efficiently, that synchronization dominates step time, so throughput scales sublinearly with worker count — a very common surprise when people budget for a linear speedup. It doesn't fail to start (that's not a hard requirement), and workers aren't independent models silently averaged — that describes federated learning, not standard distributed data-parallel training.",
+        "fr": "L'entraînement data-parallel doit synchroniser les gradients entre réplicas à chaque étape ; sans interconnexion rapide ni reduction server pour agréger efficacement, cette synchronisation domine le temps de chaque étape, donc le débit croît de façon sous-linéaire avec le nombre de workers — une surprise très fréquente chez qui budgète un gain linéaire. Le job ne refuse pas de démarrer (ce n'est pas une exigence stricte), et les workers ne sont pas des modèles indépendants moyennés en silence — cela décrit le federated learning, pas l'entraînement distribué data-parallel standard."
+      },
+      "difficulty": 2
+    },
+    {
+      "id": "ex-ml-ai-find-bug-traffic-split",
+      "kind": "find-bug",
+      "prompt": {
+        "en": "This deploy is meant to canary v2 at 10% while v1 keeps 90%, but after running it, v2 is receiving 100% of traffic. Find the bug.",
+        "fr": "Ce déploiement doit mettre v2 en canary à 10 % pendant que v1 garde 90 %, mais après exécution, v2 reçoit 100 % du trafic. Trouvez le bug."
+      },
+      "code": "gcloud ai endpoints deploy-model $ENDPOINT_ID \\\n  --region=europe-west4 \\\n  --model=$MODEL_ID_V2 \\\n  --display-name=fraud-v2 \\\n  --traffic-split=$MODEL_ID_V2=10",
+      "choices": [
+        {
+          "id": "a",
+          "label": {
+            "en": "--region should be global for endpoints",
+            "fr": "--region devrait être global pour les endpoints"
+          }
+        },
+        {
+          "id": "b",
+          "label": {
+            "en": "The split omits the existing model's ID for the remaining 90%, so Vertex AI assigns all traffic to the only model referenced, the new one",
+            "fr": "Le split omet l'ID du modèle existant pour les 90 % restants, donc Vertex AI assigne tout le trafic au seul modèle référencé, le nouveau"
+          }
+        },
+        {
+          "id": "c",
+          "label": {
+            "en": "--display-name must match the model resource name exactly",
+            "fr": "--display-name doit correspondre exactement au nom de ressource du modèle"
+          }
+        },
+        {
+          "id": "d",
+          "label": {
+            "en": "traffic-split values must be fractions between 0 and 1, not percentages",
+            "fr": "Les valeurs de traffic-split doivent être des fractions entre 0 et 1, pas des pourcentages"
+          }
+        }
+      ],
+      "answerId": "b",
+      "explanation": {
+        "en": "Vertex AI's traffic-split map must explicitly list every model deployed to the endpoint and their shares summing to 100; omitting the existing model's ID doesn't reserve its previous share, the API treats the unlisted model as unreferenced and channels all traffic to the one model that is listed. Endpoints are regional resources so --region is correct as given; display-name is a free-text label with no naming coupling to the model resource; traffic-split takes integer percentages, not fractions.",
+        "fr": "La map de traffic-split de Vertex AI doit lister explicitement chaque modèle déployé sur l'endpoint et ses parts, qui doivent sommer à 100 ; omettre l'ID du modèle existant ne réserve pas sa part précédente, l'API traite le modèle non listé comme non référencé et dirige tout le trafic vers le seul modèle listé. Les endpoints sont des ressources régionales, donc --region est correct tel quel ; display-name est une étiquette libre sans lien de nommage avec la ressource modèle ; traffic-split prend des pourcentages entiers, pas des fractions."
+      },
+      "difficulty": 2
+    },
+    {
+      "id": "ex-ml-ai-find-bug-rag",
+      "kind": "find-bug",
+      "prompt": {
+        "en": "This support-bot code is supposed to answer from the internal knowledge base, but it still fabricates policies that don't exist in the docs. Find the bug.",
+        "fr": "Ce bot de support est censé répondre à partir de la base de connaissances interne, mais il continue d'inventer des politiques qui n'existent pas dans la documentation. Trouvez le bug."
+      },
+      "code": "def answer_support_question(question: str) -> str:\n    response = generative_model.generate_content(\n        f\"You are a support agent. Answer this question: {question}\",\n    )\n    return response.text",
+      "choices": [
+        {
+          "id": "a",
+          "label": {
+            "en": "The prompt should be phrased as a system instruction, not a user message",
+            "fr": "Le prompt devrait être formulé comme une instruction système, pas un message utilisateur"
+          }
+        },
+        {
+          "id": "b",
+          "label": {
+            "en": "No retrieval step: the model answers purely from parametric memory, with no grounding tool or retrieved KB passages in the request",
+            "fr": "Aucune étape de récupération : le modèle répond uniquement depuis sa mémoire paramétrique, sans outil de grounding ni passages de la base de connaissances dans la requête"
+          }
+        },
+        {
+          "id": "c",
+          "label": {
+            "en": "generate_content should be called with temperature=0",
+            "fr": "generate_content devrait être appelé avec temperature=0"
+          }
+        },
+        {
+          "id": "d",
+          "label": {
+            "en": "The function needs a try/except around the API call",
+            "fr": "La fonction a besoin d'un try/except autour de l'appel API"
+          }
+        }
+      ],
+      "answerId": "b",
+      "explanation": {
+        "en": "Nothing in this call retrieves or attaches any knowledge-base content — no grounding tool, no retrieved passages injected into the prompt — so the model answers entirely from its parametric memory, exactly the hallucination surface RAG/grounding is meant to close. The fix is to retrieve relevant KB passages (or use a grounding tool backed by a datastore) and instruct the model to answer only from them. Prompt phrasing, temperature and error handling are real hygiene concerns but don't address why the model invents policy it was never given.",
+        "fr": "Rien dans cet appel ne récupère ni n'attache de contenu de la base de connaissances — aucun outil de grounding, aucun passage récupéré injecté dans le prompt — donc le modèle répond entièrement depuis sa mémoire paramétrique, exactement la surface d'hallucination que le RAG/grounding est censé fermer. Le correctif consiste à récupérer les passages pertinents de la base de connaissances (ou utiliser un outil de grounding adossé à un datastore) et à demander au modèle de répondre uniquement à partir d'eux. La formulation du prompt, la température et la gestion d'erreurs sont des hygiènes réelles mais n'expliquent pas pourquoi le modèle invente une politique qui ne lui a jamais été donnée."
+      },
+      "difficulty": 3
+    },
+    {
+      "id": "ex-ml-ai-hp-tuning-budget",
+      "kind": "mcq",
+      "prompt": {
+        "en": "A hyperparameter tuning job is configured with max-trial-count=50 and parallel-trial-count=5, and each trial trains for roughly 3 GPU-hours. Before launching, what should the team budget for and consider?",
+        "fr": "Un job de tuning d'hyperparamètres est configuré avec max-trial-count=50 et parallel-trial-count=5, chaque essai entraînant environ 3 heures-GPU. Avant de le lancer, que doit budgétiser et considérer l'équipe ?"
+      },
+      "choices": [
+        {
+          "id": "a",
+          "label": {
+            "en": "Roughly 150 GPU-hours total, since Vizier still runs every requested trial to completion regardless of how promising early results look",
+            "fr": "Environ 150 heures-GPU au total, car Vizier exécute quand même chaque essai demandé jusqu'au bout, quel que soit le potentiel des premiers résultats"
+          }
+        },
+        {
+          "id": "b",
+          "label": {
+            "en": "Roughly 15 GPU-hours, since parallel-trial-count caps the total work",
+            "fr": "Environ 15 heures-GPU, car parallel-trial-count plafonne le travail total"
+          }
+        },
+        {
+          "id": "c",
+          "label": {
+            "en": "Nothing extra: hyperparameter tuning is billed as one flat job regardless of trial count",
+            "fr": "Rien de plus : le tuning d'hyperparamètres est facturé comme un job forfaitaire unique quel que soit le nombre d'essais"
+          }
+        },
+        {
+          "id": "d",
+          "label": {
+            "en": "3 GPU-hours, since only the best trial's cost is billed",
+            "fr": "3 heures-GPU, car seul le coût du meilleur essai est facturé"
+          }
+        }
+      ],
+      "answerId": "a",
+      "explanation": {
+        "en": "Total cost is max-trial-count times per-trial cost regardless of parallelism — parallel-trial-count controls how many trials run concurrently (affecting wall-clock time), not how many total trials execute or their total cost. 50 trials at 3 GPU-hours is roughly 150 GPU-hours; the team should also consider narrowing the search first with a cheaper proxy run rather than accepting the full bill by default for every tuning job.",
+        "fr": "Le coût total est max-trial-count multiplié par le coût d'un essai, indépendamment du parallélisme — parallel-trial-count contrôle combien d'essais tournent simultanément (ce qui affecte le temps horloge), pas le nombre total d'essais exécutés ni leur coût total. 50 essais à 3 heures-GPU représentent environ 150 heures-GPU ; l'équipe devrait aussi envisager de resserrer d'abord la recherche avec un proxy moins coûteux plutôt que d'accepter la facture complète par défaut pour chaque job de tuning."
+      },
+      "difficulty": 2
+    },
+    {
+      "id": "ex-ml-ai-governance-training-data",
+      "kind": "mcq",
+      "prompt": {
+        "en": "A client's marketing team hands over a dataset of customer chat transcripts to train a support-response model. Legal has not reviewed whether the original consent covers this use. What should happen before training starts?",
+        "fr": "L'équipe marketing d'un client transmet un dataset de transcriptions de chat client pour entraîner un modèle de réponse au support. Le service juridique n'a pas vérifié si le consentement initial couvre cet usage. Que doit-il se passer avant le début de l'entraînement ?"
+      },
+      "choices": [
+        {
+          "id": "a",
+          "label": {
+            "en": "Train anyway; anonymizing the outputs at serving time is sufficient",
+            "fr": "Entraîner quand même ; anonymiser les sorties au moment du serving suffit"
+          }
+        },
+        {
+          "id": "b",
+          "label": {
+            "en": "Get legal/data-governance sign-off that the consent scope covers this training use, before any training run",
+            "fr": "Obtenir la validation juridique/gouvernance des données que le périmètre de consentement couvre cet usage d'entraînement, avant tout run"
+          }
+        },
+        {
+          "id": "c",
+          "label": {
+            "en": "Train a first version to see if it performs well, then involve legal only if it ships",
+            "fr": "Entraîner une première version pour voir si elle est performante, puis n'impliquer le juridique que si elle est mise en production"
+          }
+        },
+        {
+          "id": "d",
+          "label": {
+            "en": "Proceed, since Vertex AI's IAM controls make training data usage compliant by default",
+            "fr": "Continuer, car les contrôles IAM de Vertex AI rendent l'usage des données d'entraînement conforme par défaut"
+          }
+        }
+      ],
+      "answerId": "b",
+      "explanation": {
+        "en": "Training exposes the data to the model itself, which can memorize and later leak fragments of it in outputs — a problem outputs-side anonymization doesn't fix and that can't be undone by deleting the dataset once a model has trained on it. IAM controls access to resources, not the legal basis for using data a certain way. This has to be a governance decision made before training, not a technical afterthought contingent on whether the model ships.",
+        "fr": "L'entraînement expose les données au modèle lui-même, qui peut les mémoriser et en faire fuiter des fragments plus tard dans ses sorties — un problème que l'anonymisation côté sorties ne corrige pas et qui ne peut pas être annulé en supprimant le dataset une fois le modèle entraîné dessus. IAM contrôle l'accès aux ressources, pas la base légale d'un usage donné des données. C'est une décision de gouvernance à prendre avant l'entraînement, pas un rattrapage technique conditionné à la mise en production du modèle."
+      },
+      "difficulty": 2
+    }
+  ]
+}

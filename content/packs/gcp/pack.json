@@ -71,7 +71,7 @@
         "fr": "BigQuery, Dataflow, Dataproc, Composer"
       },
       "icon": "📊",
-      "status": "planned"
+      "status": "available"
     },
     {
       "id": "serverless-messaging",
@@ -81,7 +81,7 @@
         "fr": "Pub/Sub, Eventarc, Tasks, Scheduler, Workflows"
       },
       "icon": "📨",
-      "status": "planned"
+      "status": "available"
     },
     {
       "id": "observability-sre",
@@ -91,7 +91,7 @@
         "fr": "Monitoring, Logging, Trace, SLO, budgets d'erreur"
       },
       "icon": "🔭",
-      "status": "planned"
+      "status": "available"
     },
     {
       "id": "devops-iac",
@@ -101,7 +101,7 @@
         "fr": "Cloud Build, Artifact Registry, Cloud Deploy, Terraform"
       },
       "icon": "🚀",
-      "status": "planned"
+      "status": "available"
     },
     {
       "id": "ml-ai",
@@ -111,7 +111,7 @@
         "fr": "Vertex AI, IA générative, serving de modèles"
       },
       "icon": "🤖",
-      "status": "planned"
+      "status": "available"
     },
     {
       "id": "whats-new",

@@ -1,0 +1,755 @@
+{
+  "id": "devops-iac",
+  "title": { "en": "DevOps & IaC", "fr": "DevOps & IaC" },
+  "tagline": {
+    "en": "Cloud Build, Artifact Registry, Cloud Deploy, Terraform",
+    "fr": "Cloud Build, Artifact Registry, Cloud Deploy, Terraform"
+  },
+  "icon": "🚀",
+  "lessons": [
+    {
+      "id": "devops-iac-cloud-build",
+      "title": {
+        "en": "Cloud Build: triggers, cloudbuild.yaml, private pools",
+        "fr": "Cloud Build : déclencheurs, cloudbuild.yaml, pools privés"
+      },
+      "minutes": 5,
+      "blocks": [
+        {
+          "type": "text",
+          "body": {
+            "en": "A Cloud Build trigger fires a run from an event: a push to a branch, a pull request opened against a repo, a manual invocation, or a Pub/Sub message. Each build executes a `cloudbuild.yaml`: an ordered list of steps, each one a container image running a command, sharing a `/workspace` volume between steps. There is no implicit shell state between steps — anything a later step needs (built binaries, env files) must live under `/workspace` or be passed explicitly.",
+            "fr": "Un déclencheur Cloud Build démarre une exécution à partir d'un événement : un push sur une branche, une pull request ouverte sur un dépôt, une invocation manuelle, ou un message Pub/Sub. Chaque build exécute un `cloudbuild.yaml` : une liste ordonnée d'étapes, chacune une image de conteneur lançant une commande, partageant un volume `/workspace` entre les étapes. Il n'y a aucun état de shell implicite entre les étapes — tout ce dont une étape suivante a besoin (binaires compilés, fichiers d'env) doit vivre sous `/workspace` ou être transmis explicitement."
+          }
+        },
+        {
+          "type": "text",
+          "body": {
+            "en": "Private pools run builds inside a VPC you control, giving them a private IP and access to VPC-internal resources (an on-prem-connected Cloud SQL instance, an internal artifact mirror, a private API) that the default pool — shared, egress-only infrastructure Google operates outside your network — cannot reach. They cost more and add a small cold-start, so reserve them for builds that genuinely need VPC connectivity, not as a default. Build cache strategy is the other lever on build time: Cloud Build itself keeps no implicit Docker layer cache between runs, so caching must be engineered — pulling a previous image with `--cache-from`, using Kaniko's remote cache, or persisting dependency directories to Cloud Storage between steps.",
+            "fr": "Les pools privés exécutent les builds dans un VPC que vous contrôlez, avec une IP privée et l'accès aux ressources internes au VPC (une instance Cloud SQL connectée on-prem, un miroir d'artefacts interne, une API privée) que le pool par défaut — infrastructure mutualisée, egress uniquement, opérée par Google hors de votre réseau — ne peut pas atteindre. Ils coûtent plus cher et ajoutent un léger cold-start, donc réservez-les aux builds ayant réellement besoin de connectivité VPC, pas par défaut. La stratégie de cache de build est l'autre levier sur le temps de build : Cloud Build ne garde par lui-même aucun cache implicite de couches Docker entre exécutions, donc le cache doit être conçu — récupérer une image précédente avec `--cache-from`, utiliser le cache distant de Kaniko, ou persister les répertoires de dépendances vers Cloud Storage entre étapes."
+          }
+        },
+        {
+          "type": "code",
+          "code": "steps:\n  - name: 'gcr.io/cloud-builders/docker'\n    args:\n      - 'build'\n      - '--cache-from'\n      - 'europe-west1-docker.pkg.dev/my-app/repo/api:latest'\n      - '-t'\n      - 'europe-west1-docker.pkg.dev/my-app/repo/api:$COMMIT_SHA'\n      - '.'\n  - name: 'gcr.io/cloud-builders/docker'\n    args: ['push', 'europe-west1-docker.pkg.dev/my-app/repo/api:$COMMIT_SHA']\noptions:\n  pool:\n    name: 'projects/my-app/locations/europe-west1/workerPools/vpc-pool'\ntimeout: '1200s'",
+          "caption": {
+            "en": "--cache-from reuses layers from the last pushed image; the pool option routes the build into a private pool.",
+            "fr": "--cache-from réutilise les couches de la dernière image poussée ; l'option pool route le build vers un pool privé."
+          }
+        },
+        {
+          "type": "gotcha",
+          "body": {
+            "en": "Projects created years ago often still grant the default Cloud Build service account `roles/editor` — a legacy default that lets any build read and modify almost anything in the project. Newer projects get a narrower default, but the fix in an existing estate is the same either way: create a dedicated service account per pipeline with exactly the roles each step needs (Artifact Registry writer, Cloud Run deployer), and strip the broad legacy grant.",
+            "fr": "Des projets créés il y a des années accordent encore souvent au compte de service Cloud Build par défaut le rôle `roles/editor` — un défaut historique qui permet à n'importe quel build de lire et modifier presque tout dans le projet. Les projets récents ont un défaut plus restreint, mais le correctif sur un parc existant reste le même : créer un compte de service dédié par pipeline avec exactement les rôles nécessaires à chaque étape (Artifact Registry writer, déployeur Cloud Run), et retirer l'octroi historique trop large."
+          }
+        },
+        {
+          "type": "tip",
+          "body": {
+            "en": "Tag every built image with `$COMMIT_SHA` (or `$SHORT_SHA`), never rely on `:latest` for anything that gets deployed — it is the difference between a reproducible, auditable artifact trail and \"we don't actually know what's running in prod\". Reserve manual triggers or an approval step for the run that ships to production; automatic triggers are fine for build-and-test on every push or PR.",
+            "fr": "Taguez chaque image construite avec `$COMMIT_SHA` (ou `$SHORT_SHA`), ne comptez jamais sur `:latest` pour quoi que ce soit qui est déployé — c'est la différence entre une piste d'artefacts reproductible et auditable et « on ne sait plus vraiment ce qui tourne en prod ». Réservez les déclencheurs manuels ou une étape d'approbation à l'exécution qui livre en production ; les déclencheurs automatiques conviennent pour build-et-test à chaque push ou PR."
+          }
+        }
+      ]
+    },
+    {
+      "id": "devops-iac-artifact-registry",
+      "title": {
+        "en": "Artifact Registry: formats, scanning, cleanup",
+        "fr": "Artifact Registry : formats, scan, nettoyage"
+      },
+      "minutes": 5,
+      "blocks": [
+        {
+          "type": "text",
+          "body": {
+            "en": "Artifact Registry is the successor to Container Registry (deprecated, migration mandatory for new work) and generalizes it: one service, many repository formats — Docker, npm, Maven, Python (pip), Go modules, Apt, Yum. Each repository is scoped to one format and one region or multi-region. Beyond standard repos, remote repositories proxy and cache an upstream (Docker Hub, npmjs.org) so builds don't hit the public internet on every pull, and virtual repositories aggregate several repos (say, a remote proxy plus your own uploads) behind one URL for consumers.",
+            "fr": "Artifact Registry est le successeur de Container Registry (dépréciée, migration obligatoire pour tout nouveau projet) et le généralise : un seul service, plusieurs formats de dépôt — Docker, npm, Maven, Python (pip), modules Go, Apt, Yum. Chaque dépôt est cantonné à un format et une région ou multi-région. Au-delà des dépôts standards, les dépôts distants (remote) proxy-cachent un amont (Docker Hub, npmjs.org) pour que les builds ne tapent pas l'internet public à chaque pull, et les dépôts virtuels agrègent plusieurs dépôts (par exemple un proxy distant plus vos propres uploads) derrière une seule URL pour les consommateurs."
+          }
+        },
+        {
+          "type": "text",
+          "body": {
+            "en": "Vulnerability scanning (via Artifact Analysis) inspects OS-level packages in container images automatically on push, and keeps rescanning already-stored images as the CVE database updates — a critical detail: an image can turn \"vulnerable\" weeks after you pushed it with no rebuild involved. Cleanup policies then control storage cost and blast radius: rules like \"keep the 10 most recent tagged versions\" or \"delete untagged images older than 30 days\" prune automatically so a registry doesn't grow forever with every CI run's throwaway build.",
+            "fr": "Le scan de vulnérabilités (via Artifact Analysis) inspecte automatiquement les paquets au niveau OS des images de conteneur au push, et continue de rescanner les images déjà stockées à mesure que la base CVE se met à jour — un détail critique : une image peut devenir « vulnérable » des semaines après son push, sans aucun rebuild. Les politiques de nettoyage maîtrisent ensuite le coût de stockage et la surface exposée : des règles comme « garder les 10 versions taguées les plus récentes » ou « supprimer les images non taguées de plus de 30 jours » purgent automatiquement pour qu'un dépôt ne grossisse pas indéfiniment avec le build jetable de chaque run CI."
+          }
+        },
+        {
+          "type": "code",
+          "code": "gcloud artifacts repositories create api-images \\\n  --repository-format=docker \\\n  --location=europe-west1 \\\n  --immutable-tags\n\ngcloud artifacts repositories set-cleanup-policies api-images \\\n  --location=europe-west1 \\\n  --policy=cleanup-policy.json\n\n# cleanup-policy.json\n# [{ \"name\": \"keep-recent\", \"action\": {\"type\": \"KEEP\"},\n#    \"mostRecentVersions\": {\"keepCount\": 10} },\n#  { \"name\": \"delete-untagged\", \"action\": {\"type\": \"DELETE\"},\n#    \"condition\": {\"tagState\": \"UNTAGGED\", \"olderThan\": \"2592000s\"} }]",
+          "caption": {
+            "en": "--immutable-tags rejects retagging, closing the gap that :latest-style tags otherwise leave open.",
+            "fr": "--immutable-tags refuse le retaggage, fermant la brèche que laissent sinon les tags façon :latest."
+          }
+        },
+        {
+          "type": "gotcha",
+          "body": {
+            "en": "Multi-regional placement buys resilience across a continent, but it is not a free upgrade: every push and pull crosses region boundaries, adding latency and cross-region transfer cost. If your builds and your runtime (Cloud Run, GKE) all live in europe-west1, a multi-regional \"europe\" repository only slows every CI run and deploy for a durability guarantee nothing in a single-region architecture actually uses. Default to regional, co-located with where the images are built and consumed.",
+            "fr": "Le placement multi-régional achète une résilience à l'échelle d'un continent, mais ce n'est pas une amélioration gratuite : chaque push et pull franchit des frontières de région, ajoutant latence et coût de transfert inter-région. Si vos builds et votre runtime (Cloud Run, GKE) vivent tous dans europe-west1, un dépôt multi-régional « europe » ne fait que ralentir chaque run CI et chaque déploiement, pour une garantie de durabilité qu'une architecture mono-région n'exploite pas réellement. Par défaut, choisissez le régional, co-localisé avec l'endroit où les images sont construites et consommées."
+          }
+        },
+        {
+          "type": "tip",
+          "body": {
+            "en": "Deploy manifests should reference images by digest (`api@sha256:...`), not by tag. Tags are mutable pointers that can be silently repointed by the next push; a digest is content-addressed and can only ever mean one exact set of bytes. This is the interview-grade answer to \"how do you guarantee reproducible deploys and safe rollbacks?\"",
+            "fr": "Les manifestes de déploiement doivent référencer les images par digest (`api@sha256:...`), pas par tag. Les tags sont des pointeurs mutables qu'un push suivant peut repointer silencieusement ; un digest est adressé par contenu et ne peut jamais désigner qu'un seul ensemble exact d'octets. C'est la réponse niveau entretien à « comment garantissez-vous des déploiements reproductibles et des rollbacks sûrs ? »"
+          }
+        }
+      ]
+    },
+    {
+      "id": "devops-iac-cloud-deploy",
+      "title": {
+        "en": "Cloud Deploy: pipelines, promotion, canary",
+        "fr": "Cloud Deploy : pipelines, promotion, canary"
+      },
+      "minutes": 5,
+      "blocks": [
+        {
+          "type": "text",
+          "body": {
+            "en": "Cloud Deploy is a managed continuous-delivery service sitting one layer above Cloud Build: you declare a `DeliveryPipeline` as an ordered sequence of `Target` resources (dev, staging, prod, each its own GKE cluster, Cloud Run service, or other runtime), then create a `release` from a rendered manifest. The core discipline it enforces is build once, promote everywhere: the same rendered artifact advances target to target unchanged, instead of being rebuilt per environment — the only thing that differs between dev and prod is configuration, never the binary.",
+            "fr": "Cloud Deploy est un service de livraison continue managé, un cran au-dessus de Cloud Build : vous déclarez un `DeliveryPipeline` comme une séquence ordonnée de ressources `Target` (dev, staging, prod, chacune son cluster GKE, son service Cloud Run, ou un autre runtime), puis créez une `release` à partir d'un manifeste rendu. La discipline centrale qu'il impose : construire une fois, promouvoir partout — le même artefact rendu avance de cible en cible sans changer, au lieu d'être reconstruit par environnement — seule la configuration diffère entre dev et prod, jamais le binaire."
+          }
+        },
+        {
+          "type": "text",
+          "body": {
+            "en": "Rollouts to a target can be standard (all at once) or canary, shifting traffic in phases (e.g. 25% / 50% / 100%) with a pause between each. Approval gates (`requireApproval: true` on a target) block promotion until a principal holding the `roles/clouddeploy.approver` role explicitly signs off — the natural place to put a human in the loop before prod, without blocking the automatic flow through dev and staging.",
+            "fr": "Les rollouts vers une cible peuvent être standards (d'un coup) ou canary, déplaçant le trafic par phases (par ex. 25 % / 50 % / 100 %) avec une pause entre chacune. Les portes d'approbation (`requireApproval: true` sur une cible) bloquent la promotion jusqu'à ce qu'un principal détenant le rôle `roles/clouddeploy.approver` donne explicitement son feu vert — l'endroit naturel pour mettre un humain dans la boucle avant la prod, sans bloquer le flux automatique à travers dev et staging."
+          }
+        },
+        {
+          "type": "code",
+          "code": "apiVersion: deploy.cloud.google.com/v1\nkind: DeliveryPipeline\nmetadata:\n  name: api-pipeline\nserialPipeline:\n  stages:\n    - targetId: dev\n    - targetId: staging\n    - targetId: prod\n      strategy:\n        canary:\n          runtimeConfig:\n            cloudRun: {}\n          canaryDeployment:\n            percentages: [25, 50]\n            verify: true\n---\napiVersion: deploy.cloud.google.com/v1\nkind: Target\nmetadata:\n  name: prod\nrequireApproval: true\nrun:\n  location: projects/my-app/locations/europe-west1",
+          "caption": {
+            "en": "verify: true wires an automated check between canary phases, not just a pause.",
+            "fr": "verify: true branche une vérification automatisée entre les phases canary, pas juste une pause."
+          }
+        },
+        {
+          "type": "gotcha",
+          "body": {
+            "en": "A canary phase without an automated verification step (`verify: true` plus a real check against Cloud Monitoring SLOs, or a custom Skaffold verify job) only reduces blast radius — it does nothing to stop a bad rollout if the human watching the dashboard misses the signal, or if nobody is watching at all. Teams that treat canary percentages as the whole safety story often still manually promote a regressed release to 100%, because \"canary\" without \"verification\" is just a slower, partial rollout.",
+            "fr": "Une phase canary sans étape de vérification automatisée (`verify: true` plus un vrai contrôle contre des SLO Cloud Monitoring, ou un job de vérification Skaffold personnalisé) ne fait que réduire la surface d'impact — elle n'empêche en rien un mauvais rollout si l'humain qui surveille le tableau de bord rate le signal, ou si personne ne surveille du tout. Les équipes qui traitent les pourcentages canary comme toute l'histoire de la sécurité finissent souvent par promouvoir manuellement une release régressée à 100 %, parce qu'un « canary » sans « vérification » n'est qu'un rollout partiel plus lent."
+          }
+        },
+        {
+          "type": "tip",
+          "body": {
+            "en": "Keep infrastructure changes (Terraform) out of the application delivery pipeline entirely — different risk profile, different cadence. Cloud Deploy should promote the same container digest through dev, staging, prod; Terraform applies for the underlying infra are a separate, usually lower-frequency, higher-scrutiny pipeline of their own.",
+            "fr": "Gardez les changements d'infrastructure (Terraform) totalement hors du pipeline de livraison applicative — profil de risque différent, cadence différente. Cloud Deploy doit promouvoir le même digest de conteneur à travers dev, staging, prod ; les applys Terraform pour l'infra sous-jacente forment un pipeline séparé, généralement moins fréquent et sous surveillance plus stricte."
+          }
+        }
+      ]
+    },
+    {
+      "id": "devops-iac-terraform",
+      "title": {
+        "en": "Terraform on GCP: state, workspaces, footguns",
+        "fr": "Terraform sur GCP : state, workspaces, pièges"
+      },
+      "minutes": 6,
+      "blocks": [
+        {
+          "type": "text",
+          "body": {
+            "en": "Provider configuration is small but consequential: pin the `google` (or `google-beta` for preview features) provider version and the Terraform CLI version in a lockfile committed to git, so `terraform apply` behaves identically on every machine and in CI. Authenticate via Application Default Credentials (a CI service account, or `gcloud auth application-default login` locally) rather than embedding a service account key file in the repo or in provider config — the same key-hygiene principle that applies everywhere else on GCP applies here too.",
+            "fr": "La configuration du provider est réduite mais lourde de conséquences : figez la version du provider `google` (ou `google-beta` pour les fonctionnalités preview) et celle du CLI Terraform dans un lockfile commité, pour que `terraform apply` se comporte à l'identique sur toute machine et en CI. Authentifiez-vous via Application Default Credentials (un compte de service CI, ou `gcloud auth application-default login` en local) plutôt que d'embarquer un fichier de clé de compte de service dans le dépôt ou la config du provider — le même principe d'hygiène des clés qui s'applique partout ailleurs sur GCP s'applique ici aussi."
+          }
+        },
+        {
+          "type": "text",
+          "body": {
+            "en": "A GCS backend stores state remotely with native locking — GCS's object generation preconditions prevent two concurrent applies from corrupting the same state, no separate lock table needed. State is a complete record of every managed resource's attributes, which routinely includes secrets in plaintext (a generated database password, a service account key material) — treat the bucket as a secret store: restrict its IAM to the pipeline identity and a small human group, enable object versioning for recovery. Workspaces let one directory/config target several environments via a state-file suffix, cheap to set up but easy to misuse since which workspace is \"selected\" lives in invisible local/CI shell state; a directory-per-environment layout (separate folders, separate `.tfvars`, separate backends) trades some duplication for an explicit, visible target.",
+            "fr": "Un backend GCS stocke l'état à distance avec verrouillage natif — les préconditions de génération d'objet de GCS empêchent deux applys concurrents de corrompre le même état, sans table de verrous séparée. Le state est un enregistrement complet des attributs de chaque ressource gérée, ce qui inclut couramment des secrets en clair (un mot de passe de base généré, une clé de compte de service) — traitez le bucket comme un coffre-fort : restreignez son IAM à l'identité du pipeline et à un petit groupe humain, activez le versioning d'objets pour la récupération. Les workspaces permettent à un seul répertoire/config de cibler plusieurs environnements via un suffixe de fichier d'état, bon marché à mettre en place mais facile à mal utiliser puisque le workspace « sélectionné » vit dans un état de shell local/CI invisible ; une disposition en répertoire-par-environnement (dossiers séparés, `.tfvars` séparés, backends séparés) échange un peu de duplication contre une cible explicite et visible."
+          }
+        },
+        {
+          "type": "code",
+          "code": "# envs/prod/backend.tf\nterraform {\n  backend \"gcs\" {\n    bucket = \"my-app-tfstate\"\n    prefix = \"terraform/prod\"\n  }\n  required_providers {\n    google = {\n      source  = \"hashicorp/google\"\n      version = \"= 5.42.0\"\n    }\n  }\n}\n\n# envs/staging/backend.tf\nterraform {\n  backend \"gcs\" {\n    bucket = \"my-app-tfstate\"\n    prefix = \"terraform/staging\"\n  }\n}",
+          "caption": {
+            "en": "Directory-per-environment: the prefix (and the path you cd into) makes the target explicit, no workspace to forget.",
+            "fr": "Répertoire par environnement : le prefix (et le chemin dans lequel on se place) rend la cible explicite, aucun workspace à oublier."
+          }
+        },
+        {
+          "type": "gotcha",
+          "body": {
+            "en": "Three classic Terraform footguns compound each other: state drift from manual console changes (\"ClickOps\") makes the next `plan` show a confusing, sometimes destructive diff as Terraform tries to reconcile reality back to config; accidental destroys happen when a resource block is deleted from config without first running `terraform state rm` or `import`, so Terraform reads that as \"this should not exist\" and removes the real thing; and secrets leak when a plan or apply is logged verbatim in CI output, exposing values that were only ever meant to live in state. None of these are Terraform bugs — they are process gaps: PR review on `.tf` changes, `-target` used sparingly and never as a habit, and CI log redaction for anything touching secrets.",
+            "fr": "Trois pièges classiques de Terraform s'aggravent mutuellement : la dérive d'état due à des changements manuels dans la console (« ClickOps ») fait apparaître au prochain `plan` un diff confus, parfois destructeur, Terraform tentant de réconcilier le réel avec la config ; les destructions accidentelles surviennent quand un bloc de ressource est supprimé de la config sans avoir d'abord lancé `terraform state rm` ou `import`, si bien que Terraform lit cela comme « ceci ne devrait pas exister » et supprime la chose réelle ; et les secrets fuient quand un plan ou un apply est loggé tel quel dans la sortie CI, exposant des valeurs censées ne vivre que dans le state. Rien de tout cela n'est un bug Terraform — ce sont des trous de process : revue de PR sur les changements `.tf`, `-target` utilisé avec parcimonie et jamais par habitude, et rédaction des logs CI pour tout ce qui touche des secrets."
+          }
+        },
+        {
+          "type": "tip",
+          "body": {
+            "en": "Post `terraform plan` output as a PR comment in CI for review before merge — excellent practice, but redact or gate it when the diff touches anything sensitive. Prefer remote state data sources (`terraform_remote_state`) to read outputs across stacks instead of hardcoding project IDs or resource names between them, and reference Secret Manager for actual secret values rather than letting Terraform generate and store them in state at all when you have a choice.",
+            "fr": "Postez la sortie de `terraform plan` en commentaire de PR en CI pour revue avant merge — excellente pratique, mais rédigez-la ou verrouillez-la quand le diff touche quelque chose de sensible. Préférez les data sources de state distant (`terraform_remote_state`) pour lire des outputs entre stacks plutôt que de coder en dur des IDs de projet ou des noms de ressources entre eux, et référencez Secret Manager pour les vraies valeurs secrètes plutôt que de laisser Terraform les générer et les stocker en state quand vous avez le choix."
+          }
+        }
+      ]
+    },
+    {
+      "id": "devops-iac-pipeline",
+      "title": {
+        "en": "The full pipeline: architecture, IAM, secrets, rollback",
+        "fr": "Le pipeline complet : architecture, IAM, secrets, rollback"
+      },
+      "minutes": 5,
+      "blocks": [
+        {
+          "type": "text",
+          "body": {
+            "en": "A reference CI/CD architecture strings the previous lessons together: a push to main fires a Cloud Build trigger that runs tests, builds an image tagged by commit SHA, and pushes it to a regional Artifact Registry co-located with runtime; Cloud Deploy then creates a release from that exact digest and promotes it dev → staging automatically, then to prod behind an approval gate and a canary. Terraform for the underlying infrastructure (networks, IAM bindings, the GKE cluster or Cloud Run service definitions themselves) runs as a separate pipeline, triggered by changes to its own directory, applied less frequently and reviewed more heavily than application code.",
+            "fr": "Une architecture CI/CD de référence enchaîne les leçons précédentes : un push sur main déclenche un trigger Cloud Build qui lance les tests, construit une image taguée par le SHA du commit, et la pousse vers un Artifact Registry régional co-localisé avec le runtime ; Cloud Deploy crée ensuite une release à partir de ce digest exact et la promeut dev → staging automatiquement, puis vers la prod derrière une porte d'approbation et un canary. Terraform pour l'infrastructure sous-jacente (réseaux, bindings IAM, définitions du cluster GKE ou du service Cloud Run eux-mêmes) tourne comme un pipeline séparé, déclenché par des changements dans son propre répertoire, appliqué moins souvent et revu plus strictement que le code applicatif."
+          }
+        },
+        {
+          "type": "text",
+          "body": {
+            "en": "Every stage of the pipeline should run as its own least-privilege service account: a build-time identity with only Artifact Registry write access and whatever the test suite needs, and a separate deploy-time identity scoped to exactly the target project and the specific deploy role (Cloud Run admin, GKE deployer) — never the broad default Compute Engine service account, and never one identity shared across build and deploy. Secrets used anywhere in the pipeline (API keys, database credentials, signing keys) belong in Secret Manager, referenced by the build config's `availableSecrets`/`secretEnv` and injected as environment variables at the moment a step runs — never as a plain substitution variable or a `--build-arg`, both of which get recorded in logs or baked into image layers.",
+            "fr": "Chaque étape du pipeline doit tourner avec son propre compte de service à moindre privilège : une identité de build avec uniquement l'accès en écriture à Artifact Registry et ce dont la suite de tests a besoin, et une identité de déploiement séparée cantonnée exactement au projet cible et au rôle de déploiement précis (admin Cloud Run, déployeur GKE) — jamais le compte de service Compute Engine par défaut trop large, et jamais une identité partagée entre build et déploiement. Les secrets utilisés n'importe où dans le pipeline (clés API, identifiants de base de données, clés de signature) relèvent de Secret Manager, référencés via les `availableSecrets`/`secretEnv` de la config de build et injectés en variables d'environnement au moment où une étape s'exécute — jamais comme une simple variable de substitution ou un `--build-arg`, tous deux enregistrés dans les logs ou cuits dans les couches d'image."
+          }
+        },
+        {
+          "type": "code",
+          "code": "steps:\n  - name: 'gcr.io/cloud-builders/docker'\n    entrypoint: 'bash'\n    args:\n      - '-c'\n      - |\n        docker build --secret id=api_key,env=API_KEY \\\n          -t europe-west1-docker.pkg.dev/my-app/repo/api:$COMMIT_SHA .\n    secretEnv: ['API_KEY']\navailableSecrets:\n  secretManager:\n    - versionName: projects/my-app/secrets/build-api-key/versions/latest\n      env: 'API_KEY'",
+          "caption": {
+            "en": "The secret is fetched from Secret Manager at build time and never lands in a substitution variable, a log line, or a --build-arg baked into the image.",
+            "fr": "Le secret est récupéré depuis Secret Manager au moment du build et n'atterrit jamais dans une variable de substitution, une ligne de log, ou un --build-arg cuit dans l'image."
+          }
+        },
+        {
+          "type": "gotcha",
+          "body": {
+            "en": "Rollback means two different things at two different layers, and conflating them is the mistake. Application rollback — redeploying a previous image digest via Cloud Deploy — is fast, safe, and close to free, because containers are immutable and stateless-ish by construction. Infrastructure rollback is not symmetric: a Terraform apply that dropped a column, renamed a resource, or changed a firewall rule cannot generally be \"un-applied\" cleanly, because the previous state of the world (the dropped data, the old resource) may no longer exist. Infra changes usually need a forward-fix commit, not a revert — plan for that difference before an incident, not during one.",
+            "fr": "Le rollback signifie deux choses différentes à deux niveaux différents, et les confondre est l'erreur. Le rollback applicatif — redéployer un digest d'image précédent via Cloud Deploy — est rapide, sûr et quasi gratuit, parce que les conteneurs sont immuables et construits pour être quasi sans état. Le rollback d'infrastructure n'est pas symétrique : un apply Terraform qui a supprimé une colonne, renommé une ressource, ou changé une règle de pare-feu ne peut généralement pas être « dé-appliqué » proprement, parce que l'état antérieur du monde (les données supprimées, l'ancienne ressource) peut ne plus exister. Les changements d'infra nécessitent en général un commit correctif en avant, pas un revert — anticipez cette différence avant un incident, pas pendant."
+          }
+        },
+        {
+          "type": "tip",
+          "body": {
+            "en": "Rehearse the rollback path — including the friction of an approval gate — before you need it during a real incident, as a game day rather than a first attempt under pressure. Combined with build-once-promote-everywhere and pinned digests throughout, the whole pipeline gives you the two things a senior engineer is actually judged on in an incident: a known-good artifact to go back to, and a rehearsed, fast way to get there.",
+            "fr": "Répétez le chemin de rollback — friction de la porte d'approbation comprise — avant d'en avoir besoin lors d'un vrai incident, comme un exercice plutôt qu'un premier essai sous pression. Combiné à build-once-promote-everywhere et à des digests figés de bout en bout, l'ensemble du pipeline vous donne les deux choses sur lesquelles un ingénieur senior est réellement jugé en incident : un artefact connu-bon vers lequel revenir, et un chemin rapide et répété pour y arriver."
+          }
+        }
+      ]
+    }
+  ],
+  "flashcards": [
+    {
+      "id": "fc-devops-iac-triggers",
+      "front": {
+        "en": "Cloud Build triggers: push, pull request, manual — when is each the right fit?",
+        "fr": "Déclencheurs Cloud Build : push, pull request, manuel — quand utiliser chacun ?"
+      },
+      "back": {
+        "en": "Pull-request triggers give fast build+test feedback on unreviewed code without publishing artifacts. Push-to-main triggers are the right point to build and push an image, since the code has been reviewed. Manual triggers (or an approval step) fit the run that actually ships to production.",
+        "fr": "Les triggers pull-request donnent un retour build+test rapide sur du code non revu, sans publier d'artefact. Les triggers push-sur-main sont le bon endroit pour construire et pousser une image, le code ayant été revu. Les triggers manuels (ou une étape d'approbation) conviennent à l'exécution qui livre réellement en production."
+      }
+    },
+    {
+      "id": "fc-devops-iac-private-pools",
+      "front": {
+        "en": "What do Cloud Build private pools provide that the default pool cannot?",
+        "fr": "Qu'apportent les pools privés Cloud Build que le pool par défaut ne peut pas ?"
+      },
+      "back": {
+        "en": "Builds run inside your VPC with a private IP, so they can reach VPC-internal resources (on-prem-connected Cloud SQL, internal APIs) the default shared pool can't. They cost more and add cold-start, so use them only when a build genuinely needs VPC connectivity.",
+        "fr": "Les builds tournent dans votre VPC avec une IP privée, donc ils atteignent des ressources internes au VPC (Cloud SQL connectée on-prem, API internes) que le pool par défaut mutualisé ne peut pas. Ils coûtent plus et ajoutent un cold-start, à réserver aux builds qui ont réellement besoin de connectivité VPC."
+      }
+    },
+    {
+      "id": "fc-devops-iac-build-cache",
+      "front": {
+        "en": "Does Cloud Build keep an implicit Docker layer cache between runs? What's the fix if builds are slow?",
+        "fr": "Cloud Build garde-t-il un cache implicite de couches Docker entre exécutions ? Que faire si les builds sont lents ?"
+      },
+      "back": {
+        "en": "No — each build is ephemeral with no carried-over local cache. Speed it up explicitly: pull a previous image with --cache-from, use Kaniko's remote cache, or persist dependency directories to Cloud Storage between steps.",
+        "fr": "Non — chaque build est éphémère, sans cache local reporté. Accélérez explicitement : récupérez une image précédente avec --cache-from, utilisez le cache distant de Kaniko, ou persistez les répertoires de dépendances vers Cloud Storage entre étapes."
+      }
+    },
+    {
+      "id": "fc-devops-iac-formats",
+      "front": {
+        "en": "What does Artifact Registry replace, and what does it add beyond Docker images?",
+        "fr": "Que remplace Artifact Registry, et qu'ajoute-t-il au-delà des images Docker ?"
+      },
+      "back": {
+        "en": "It replaces Container Registry (deprecated). It generalizes to multiple formats in one service — Docker, npm, Maven, Python, Go, Apt, Yum — plus remote repos that proxy/cache an upstream and virtual repos that aggregate several repos behind one URL.",
+        "fr": "Il remplace Container Registry (dépréciée). Il généralise à plusieurs formats dans un seul service — Docker, npm, Maven, Python, Go, Apt, Yum — plus des dépôts distants qui proxy-cachent un amont et des dépôts virtuels qui agrègent plusieurs dépôts derrière une seule URL."
+      }
+    },
+    {
+      "id": "fc-devops-iac-scanning",
+      "front": {
+        "en": "How does Artifact Registry vulnerability scanning work, and why can an image become \"vulnerable\" without a rebuild?",
+        "fr": "Comment fonctionne le scan de vulnérabilités d'Artifact Registry, et pourquoi une image peut-elle devenir « vulnérable » sans rebuild ?"
+      },
+      "back": {
+        "en": "Artifact Analysis scans OS-level packages automatically on push and continuously rescans stored images as the CVE database updates — so a previously clean image can be flagged weeks later purely because a new CVE was published, with no rebuild involved.",
+        "fr": "Artifact Analysis scanne automatiquement les paquets au niveau OS au push et rescanne en continu les images stockées à mesure que la base CVE se met à jour — une image auparavant saine peut donc être signalée des semaines plus tard uniquement parce qu'un nouveau CVE a été publié, sans aucun rebuild."
+      }
+    },
+    {
+      "id": "fc-devops-iac-cleanup",
+      "front": {
+        "en": "What do Artifact Registry cleanup policies do, and give one example rule?",
+        "fr": "Que font les politiques de nettoyage d'Artifact Registry, avec un exemple de règle ?"
+      },
+      "back": {
+        "en": "They automatically prune images to control storage cost and blast radius, e.g. keep the 10 most recent tagged versions, or delete untagged images older than 30 days — without that, a registry accumulates every throwaway CI build forever.",
+        "fr": "Elles purgent automatiquement les images pour maîtriser le coût de stockage et la surface exposée, par ex. garder les 10 versions taguées les plus récentes, ou supprimer les images non taguées de plus de 30 jours — sans cela, un dépôt accumule indéfiniment chaque build CI jetable."
+      }
+    },
+    {
+      "id": "fc-devops-iac-digests",
+      "front": {
+        "en": "Why should production deploy manifests reference an image by digest instead of by tag?",
+        "fr": "Pourquoi les manifestes de déploiement en production doivent-ils référencer une image par digest plutôt que par tag ?"
+      },
+      "back": {
+        "en": "Tags (including :latest) are mutable pointers a later push can silently repoint. A digest (sha256:...) is content-addressed and can only ever mean one exact set of bytes — the basis for reproducible deploys and safe rollbacks.",
+        "fr": "Les tags (dont :latest) sont des pointeurs mutables qu'un push ultérieur peut repointer silencieusement. Un digest (sha256:...) est adressé par contenu et ne peut désigner qu'un seul ensemble exact d'octets — la base de déploiements reproductibles et de rollbacks sûrs."
+      }
+    },
+    {
+      "id": "fc-devops-iac-region-placement",
+      "front": {
+        "en": "Regional vs multi-regional Artifact Registry: what's the trade-off, and when does multi-regional actually pay off?",
+        "fr": "Artifact Registry régional vs multi-régional : quel compromis, et quand le multi-régional paie-t-il vraiment ?"
+      },
+      "back": {
+        "en": "Multi-regional adds resilience across a continent but every push/pull crosses region boundaries, adding latency and transfer cost. It pays off only when builds/runtime span multiple regions; for a single-region architecture, regional co-located placement is strictly better.",
+        "fr": "Le multi-régional ajoute de la résilience à l'échelle d'un continent mais chaque push/pull franchit des frontières de région, ajoutant latence et coût de transfert. Il ne paie que si builds/runtime sont répartis sur plusieurs régions ; pour une architecture mono-région, le placement régional co-localisé est strictement meilleur."
+      }
+    },
+    {
+      "id": "fc-devops-iac-build-once-promote",
+      "front": {
+        "en": "What is Cloud Deploy's \"build once, promote everywhere\" principle?",
+        "fr": "Qu'est-ce que le principe « build once, promote everywhere » de Cloud Deploy ?"
+      },
+      "back": {
+        "en": "The exact same rendered artifact (image digest) advances unchanged through dev → staging → prod targets; only configuration differs between environments, never the binary. This avoids the classic \"it built differently in each environment\" class of bugs.",
+        "fr": "Le même artefact rendu exactement (digest d'image) avance sans changement à travers les cibles dev → staging → prod ; seule la configuration diffère entre environnements, jamais le binaire. Cela évite la classique catégorie de bugs « ça a été construit différemment dans chaque environnement »."
+      }
+    },
+    {
+      "id": "fc-devops-iac-canary-approval",
+      "front": {
+        "en": "Cloud Deploy: what does an approval gate do, and why is a canary phase alone not a full safety mechanism?",
+        "fr": "Cloud Deploy : que fait une porte d'approbation, et pourquoi une phase canary seule n'est-elle pas un mécanisme de sécurité complet ?"
+      },
+      "back": {
+        "en": "requireApproval blocks promotion to a target until someone with roles/clouddeploy.approver signs off. A canary without an automated verify step only reduces blast radius — it doesn't stop a bad rollout if no one (or nothing) actually checks the right signal before promoting further.",
+        "fr": "requireApproval bloque la promotion vers une cible jusqu'à ce qu'un titulaire du rôle roles/clouddeploy.approver donne son feu vert. Un canary sans étape de vérification automatisée ne fait que réduire la surface d'impact — il n'arrête pas un mauvais rollout si personne (ni rien) ne vérifie réellement le bon signal avant de promouvoir davantage."
+      }
+    },
+    {
+      "id": "fc-devops-iac-tf-state-gcs",
+      "front": {
+        "en": "Why is a GCS backend for Terraform state safe for concurrent applies, and why must the bucket be treated as sensitive?",
+        "fr": "Pourquoi un backend GCS pour le state Terraform est-il sûr pour des applys concurrents, et pourquoi le bucket doit-il être traité comme sensible ?"
+      },
+      "back": {
+        "en": "GCS's object generation preconditions provide native state locking, no separate lock table needed. The state itself records every managed resource's full attributes, which routinely includes secrets in plaintext — bucket IAM should be as restricted as any credential store, with versioning enabled for recovery.",
+        "fr": "Les préconditions de génération d'objet de GCS assurent un verrouillage natif du state, sans table de verrous séparée. Le state lui-même enregistre les attributs complets de chaque ressource gérée, ce qui inclut couramment des secrets en clair — l'IAM du bucket doit être aussi restreint qu'un coffre-fort de credentials, avec le versioning activé pour la récupération."
+      }
+    },
+    {
+      "id": "fc-devops-iac-workspaces-vs-dirs",
+      "front": {
+        "en": "Terraform workspaces vs directory-per-environment: what's the trade-off?",
+        "fr": "Workspaces Terraform vs répertoire-par-environnement : quel compromis ?"
+      },
+      "back": {
+        "en": "Workspaces share one directory/config, switching state via a suffix — cheap, but which one is \"selected\" lives in invisible shell state, easy to forget. Directory-per-environment duplicates some config but makes the target explicit and visible (separate folders/tfvars/backends) — usually the safer choice for prod at scale.",
+        "fr": "Les workspaces partagent un répertoire/config unique, en changeant de state via un suffixe — bon marché, mais celui « sélectionné » vit dans un état de shell invisible, facile à oublier. Le répertoire-par-environnement duplique un peu de config mais rend la cible explicite et visible (dossiers/tfvars/backends séparés) — généralement le choix le plus sûr pour la prod à l'échelle."
+      }
+    },
+    {
+      "id": "fc-devops-iac-tf-footguns",
+      "front": {
+        "en": "Name three classic Terraform footguns and what actually causes each.",
+        "fr": "Citez trois pièges classiques de Terraform et leur cause réelle."
+      },
+      "back": {
+        "en": "State drift: manual console (\"ClickOps\") changes make the next plan show a confusing/destructive diff. Accidental destroys: a resource block removed from config without state rm/import first, so Terraform deletes the real thing. Secrets in state/logs: state records full resource attributes (including plaintext secrets), and CI can log a plan/apply verbatim.",
+        "fr": "Dérive d'état : des changements manuels dans la console (« ClickOps ») font apparaître au prochain plan un diff confus/destructeur. Destructions accidentelles : un bloc de ressource retiré de la config sans state rm/import préalable, donc Terraform supprime la chose réelle. Secrets en state/logs : le state enregistre les attributs complets des ressources (secrets en clair compris), et la CI peut logger un plan/apply tel quel."
+      }
+    },
+    {
+      "id": "fc-devops-iac-secrets-pipeline",
+      "front": {
+        "en": "Where do secrets belong in a Cloud Build pipeline, and what's wrong with substitution variables or --build-arg for them?",
+        "fr": "Où les secrets doivent-ils vivre dans un pipeline Cloud Build, et qu'est-ce qui cloche avec les variables de substitution ou --build-arg pour eux ?"
+      },
+      "back": {
+        "en": "Secrets belong in Secret Manager, referenced via cloudbuild.yaml's availableSecrets/secretEnv and injected as env vars at step runtime. Substitution variables and --build-arg both get recorded in logs or baked into image layers — a durable leak, not a transient one.",
+        "fr": "Les secrets doivent vivre dans Secret Manager, référencés via availableSecrets/secretEnv du cloudbuild.yaml et injectés en variables d'environnement au moment de l'étape. Les variables de substitution et --build-arg sont tous deux enregistrés dans les logs ou cuits dans les couches d'image — une fuite durable, pas transitoire."
+      }
+    }
+  ],
+  "exercises": [
+    {
+      "id": "ex-devops-iac-trigger-choice",
+      "kind": "mcq",
+      "prompt": {
+        "en": "A team wants tests to run automatically on every pull request against main, but the production image should only be built and pushed after a human merges to main. Which trigger setup fits?",
+        "fr": "Une équipe veut que les tests s'exécutent automatiquement sur chaque pull request contre main, mais l'image de production ne doit être construite et poussée qu'après qu'un humain a mergé sur main. Quelle configuration de déclencheurs convient ?"
+      },
+      "choices": [
+        {
+          "id": "a",
+          "label": {
+            "en": "One trigger on pull-request events building and pushing to Artifact Registry; a second trigger on push to main running tests only",
+            "fr": "Un trigger sur les événements pull-request qui construit et pousse vers Artifact Registry ; un second sur push vers main qui ne fait que les tests"
+          }
+        },
+        {
+          "id": "b",
+          "label": {
+            "en": "One trigger on pull-request events running tests only; a second trigger on push to main building and pushing the image",
+            "fr": "Un trigger sur les événements pull-request qui ne fait que les tests ; un second sur push vers main qui construit et pousse l'image"
+          }
+        },
+        {
+          "id": "c",
+          "label": {
+            "en": "A single trigger on push to any branch, with steps deciding behavior conditionally at runtime",
+            "fr": "Un seul trigger sur push vers n'importe quelle branche, avec des étapes décidant du comportement conditionnellement à l'exécution"
+          }
+        },
+        {
+          "id": "d",
+          "label": {
+            "en": "A manual-only trigger invoked after each merge, with no automatic runs at all",
+            "fr": "Un trigger uniquement manuel invoqué après chaque merge, sans aucune exécution automatique"
+          }
+        }
+      ],
+      "answerId": "b",
+      "explanation": {
+        "en": "PR triggers should give fast build+test feedback without publishing artifacts from unreviewed code. A push-to-main trigger is the right point to build and publish, since only reviewed code reaches main. Option a reverses the risk by publishing from unreviewed PRs; c pushes conditional logic into steps instead of using GCP's trigger-level event filtering, which is more fragile; d loses the fast CI feedback loop on every PR entirely.",
+        "fr": "Les triggers PR doivent donner un retour build+test rapide sans publier d'artefacts depuis du code non revu. Un trigger push-sur-main est le bon endroit pour construire et publier, puisque seul le code revu atteint main. L'option a inverse le risque en publiant depuis des PR non revues ; c déplace la logique conditionnelle dans les étapes au lieu d'utiliser le filtrage d'événements au niveau du trigger GCP, plus fragile ; d supprime totalement la boucle de retour CI rapide sur chaque PR."
+      },
+      "difficulty": 1
+    },
+    {
+      "id": "ex-devops-iac-cache-bug",
+      "kind": "find-bug",
+      "prompt": {
+        "en": "This cloudbuild.yaml rebuilds the full npm dependency tree from scratch on every single run, adding about 4 minutes per build even when package.json hasn't changed. Find the bug.",
+        "fr": "Ce cloudbuild.yaml reconstruit tout l'arbre de dépendances npm depuis zéro à chaque exécution, ajoutant environ 4 minutes par build même quand package.json n'a pas changé. Trouvez le bug."
+      },
+      "code": "steps:\n  - name: 'gcr.io/cloud-builders/docker'\n    args: ['build', '-t', 'europe-west1-docker.pkg.dev/my-app/repo/api:$COMMIT_SHA', '.']\n  - name: 'gcr.io/cloud-builders/docker'\n    args: ['push', 'europe-west1-docker.pkg.dev/my-app/repo/api:$COMMIT_SHA']\nimages:\n  - 'europe-west1-docker.pkg.dev/my-app/repo/api:$COMMIT_SHA'",
+      "choices": [
+        {
+          "id": "a",
+          "label": {
+            "en": "The build step needs --cache-from pointing at a previous image (e.g. :latest) so Docker layer caching can reuse the dependency-install layer",
+            "fr": "L'étape de build a besoin de --cache-from pointant vers une image précédente (par ex. :latest) pour que le cache de couches Docker réutilise la couche d'installation des dépendances"
+          }
+        },
+        {
+          "id": "b",
+          "label": {
+            "en": "$COMMIT_SHA cannot be used as an image tag",
+            "fr": "$COMMIT_SHA ne peut pas être utilisé comme tag d'image"
+          }
+        },
+        {
+          "id": "c",
+          "label": {
+            "en": "Cloud Build always disables Docker layer caching regardless of configuration",
+            "fr": "Cloud Build désactive toujours le cache de couches Docker quelle que soit la configuration"
+          }
+        },
+        {
+          "id": "d",
+          "label": {
+            "en": "The push step must run before the build step",
+            "fr": "L'étape push doit s'exécuter avant l'étape build"
+          }
+        }
+      ],
+      "answerId": "a",
+      "explanation": {
+        "en": "Cloud Build runs each build in an ephemeral environment with no local Docker layer cache carried over from the previous run unless you explicitly pull one with --cache-from (or use Kaniko's remote cache). Without it, every layer, including the dependency install, re-executes from scratch. $COMMIT_SHA tags are fine and are best practice for immutability; caching is orthogonal to tagging, and push must always follow build.",
+        "fr": "Cloud Build exécute chaque build dans un environnement éphémère sans cache local de couches Docker reporté du run précédent, sauf à en récupérer explicitement une avec --cache-from (ou le cache distant de Kaniko). Sans cela, chaque couche, dont l'installation des dépendances, se rejoue depuis zéro. Les tags $COMMIT_SHA sont corrects et constituent une bonne pratique d'immutabilité ; le cache est orthogonal au tagging, et le push doit toujours suivre le build."
+      },
+      "difficulty": 2
+    },
+    {
+      "id": "ex-devops-iac-registry-placement",
+      "kind": "mcq",
+      "prompt": {
+        "en": "Your Cloud Build pipeline and Cloud Run services all run in europe-west1. A colleague provisions the Artifact Registry repository as multi-regional (\"europe\") \"for extra safety.\" What's the most likely consequence?",
+        "fr": "Votre pipeline Cloud Build et vos services Cloud Run tournent tous dans europe-west1. Un collègue provisionne le dépôt Artifact Registry en multi-régional (« europe ») « pour plus de sécurité ». Quelle est la conséquence la plus probable ?"
+      },
+      "choices": [
+        {
+          "id": "a",
+          "label": {
+            "en": "Builds will fail because Cloud Build cannot push to multi-regional repositories",
+            "fr": "Les builds vont échouer car Cloud Build ne peut pas pousser vers des dépôts multi-régionaux"
+          }
+        },
+        {
+          "id": "b",
+          "label": {
+            "en": "Every image pull/push crosses region boundaries, adding latency and transfer cost with no real availability benefit for a single-region deployment",
+            "fr": "Chaque push/pull d'image franchit des frontières de région, ajoutant latence et coût de transfert sans réel bénéfice de disponibilité pour un déploiement mono-région"
+          }
+        },
+        {
+          "id": "c",
+          "label": {
+            "en": "Multi-regional repositories are always cheaper than regional ones",
+            "fr": "Les dépôts multi-régionaux sont toujours moins chers que les régionaux"
+          }
+        },
+        {
+          "id": "d",
+          "label": {
+            "en": "Vulnerability scanning is disabled on multi-regional repositories",
+            "fr": "Le scan de vulnérabilités est désactivé sur les dépôts multi-régionaux"
+          }
+        }
+      ],
+      "answerId": "b",
+      "explanation": {
+        "en": "Multi-regional placement buys resilience across a continent, valuable when deployments span multiple regions. Here everything lives in one region, so the multi-regional choice only adds cross-region traffic on every push and pull, with slower transfers and higher cost, for a durability guarantee the architecture never uses. Builds still succeed and scanning still runs regardless of placement; regional storage should default to co-locating with the work.",
+        "fr": "Le placement multi-régional achète une résilience à l'échelle d'un continent, utile quand les déploiements couvrent plusieurs régions. Ici, tout vit dans une seule région, donc le choix multi-régional ne fait qu'ajouter du trafic inter-région à chaque push et pull, avec des transferts plus lents et un coût plus élevé, pour une garantie de durabilité que l'architecture n'utilise jamais. Les builds réussissent quand même et le scan tourne quel que soit le placement ; le stockage régional doit par défaut être co-localisé avec le travail."
+      },
+      "difficulty": 2
+    },
+    {
+      "id": "ex-devops-iac-tag-vs-digest",
+      "kind": "predict-output",
+      "prompt": {
+        "en": "A Cloud Run service was deployed referencing europe-west1-docker.pkg.dev/my-app/repo/api:latest. A new image is built and pushed with the same :latest tag, but no new Cloud Run deployment is triggered. What happens to the currently running service?",
+        "fr": "Un service Cloud Run a été déployé en référençant europe-west1-docker.pkg.dev/my-app/repo/api:latest. Une nouvelle image est construite et poussée avec le même tag :latest, mais aucun nouveau déploiement Cloud Run n'est déclenché. Que devient le service actuellement en cours d'exécution ?"
+      },
+      "code": "gcloud run deploy api --image=europe-west1-docker.pkg.dev/my-app/repo/api:latest",
+      "choices": [
+        {
+          "id": "a",
+          "label": {
+            "en": "Cloud Run automatically redeploys with the new image as soon as :latest changes",
+            "fr": "Cloud Run redéploie automatiquement avec la nouvelle image dès que :latest change"
+          }
+        },
+        {
+          "id": "b",
+          "label": {
+            "en": "Nothing changes immediately on the live revision, but the next deploy or rollback that re-resolves the tag may silently pull a different image than the one last reviewed, breaking reproducibility",
+            "fr": "Rien ne change immédiatement sur la révision en cours, mais le prochain déploiement ou rollback qui résout à nouveau le tag peut tirer silencieusement une image différente de celle dernièrement revue, cassant la reproductibilité"
+          }
+        },
+        {
+          "id": "c",
+          "label": {
+            "en": "The push is rejected because :latest is already in use",
+            "fr": "Le push est rejeté car :latest est déjà utilisé"
+          }
+        },
+        {
+          "id": "d",
+          "label": {
+            "en": "Cloud Run pins every revision to the digest automatically regardless of the tag used at deploy time",
+            "fr": "Cloud Run épingle automatiquement chaque révision au digest quel que soit le tag utilisé au déploiement"
+          }
+        }
+      ],
+      "answerId": "b",
+      "explanation": {
+        "en": "A Cloud Run revision is created from whatever digest the tag resolved to at deploy time, so the live revision doesn't change on its own. But because :latest is mutable, any later operation that re-resolves it — a redeploy, a rollback that re-reads the tag, another pipeline deploying — can silently pick up a different image than what was tested, exactly the reproducibility break pinned digests are meant to prevent.",
+        "fr": "Une révision Cloud Run est créée à partir du digest que le tag résolvait au moment du déploiement, donc la révision en cours ne change pas d'elle-même. Mais comme :latest est mutable, toute opération ultérieure qui le résout à nouveau — un redéploiement, un rollback qui relit le tag, un autre pipeline qui déploie — peut silencieusement récupérer une image différente de celle testée, exactement la casse de reproductibilité que les digests figés sont censés éviter."
+      },
+      "difficulty": 2
+    },
+    {
+      "id": "ex-devops-iac-canary-gate",
+      "kind": "mcq",
+      "prompt": {
+        "en": "A Cloud Deploy pipeline runs a 25%/50%/100% canary to prod with a manual approval gate before the prod target. During a rollout, error rates spike at the 25% phase, but no automated verification is wired in; an on-call engineer, unaware of the spike, approves promotion to 100%. What is the actual gap in this pipeline?",
+        "fr": "Un pipeline Cloud Deploy exécute un canary 25 %/50 %/100 % vers la prod avec une porte d'approbation manuelle avant la cible prod. Pendant un rollout, le taux d'erreur explose à la phase 25 %, mais aucune vérification automatisée n'est branchée ; un ingénieur d'astreinte, inconscient du pic, approuve la promotion à 100 %. Quelle est la vraie lacune de ce pipeline ?"
+      },
+      "choices": [
+        {
+          "id": "a",
+          "label": {
+            "en": "Canary rollouts on Cloud Deploy are inherently unsafe and should be replaced by all-at-once rollouts",
+            "fr": "Les rollouts canary sur Cloud Deploy sont intrinsèquement dangereux et devraient être remplacés par des rollouts d'un coup"
+          }
+        },
+        {
+          "id": "b",
+          "label": {
+            "en": "The approval gate should be removed since it didn't prevent the incident",
+            "fr": "La porte d'approbation devrait être retirée puisqu'elle n'a pas empêché l'incident"
+          }
+        },
+        {
+          "id": "c",
+          "label": {
+            "en": "There is no automated verification step gating promotion between phases, so the canary only reduces blast radius — it doesn't prevent a bad decision if nobody is watching the right signal",
+            "fr": "Il n'y a pas d'étape de vérification automatisée conditionnant la promotion entre phases, donc le canary ne fait que réduire la surface d'impact — il n'empêche pas une mauvaise décision si personne ne surveille le bon signal"
+          }
+        },
+        {
+          "id": "d",
+          "label": {
+            "en": "Approval gates and canary rollouts cannot be combined in Cloud Deploy",
+            "fr": "Portes d'approbation et rollouts canary ne peuvent pas être combinés dans Cloud Deploy"
+          }
+        }
+      ],
+      "answerId": "c",
+      "explanation": {
+        "en": "A canary without an automated verify step is just a slower, partial rollout — its safety only materializes if someone or something actually checks the right signal before promoting. Cloud Deploy supports wiring a verify job (metrics/SLO checks or custom Skaffold verification) that can block promotion automatically on failure; relying purely on a human noticing a dashboard is fragile. Removing canary or the approval gate would make things worse; the combination is supported and correct — it's the automated check that's missing.",
+        "fr": "Un canary sans étape de vérification automatisée n'est qu'un rollout partiel plus lent — sa sécurité ne se matérialise que si quelqu'un ou quelque chose vérifie réellement le bon signal avant de promouvoir. Cloud Deploy permet de brancher un job de vérification (contrôles métriques/SLO ou vérification Skaffold personnalisée) qui peut bloquer automatiquement la promotion en cas d'échec ; compter uniquement sur un humain remarquant un tableau de bord est fragile. Retirer le canary ou la porte d'approbation aggraverait les choses ; la combinaison est supportée et correcte — c'est le contrôle automatisé qui manque."
+      },
+      "difficulty": 2
+    },
+    {
+      "id": "ex-devops-iac-tf-backend-bug",
+      "kind": "find-bug",
+      "prompt": {
+        "en": "Two engineers run terraform apply from the same directory within a minute of each other against this backend. One apply fails with a state lock error, which is expected — but a week later they realize a production database resource was actually created twice, in two different environments, because the second engineer never noticed they were in the wrong context. Find the bug.",
+        "fr": "Deux ingénieurs lancent terraform apply depuis le même répertoire à une minute d'intervalle contre ce backend. Un apply échoue avec une erreur de verrou d'état, ce qui est attendu — mais une semaine plus tard ils réalisent qu'une ressource de base de données de production a en fait été créée deux fois, dans deux environnements différents, car le second ingénieur n'a jamais remarqué qu'il était dans le mauvais contexte. Trouvez le bug."
+      },
+      "code": "terraform {\n  backend \"gcs\" {\n    bucket = \"my-app-tfstate\"\n    prefix = \"terraform/state\"\n  }\n}\nresource \"google_sql_database_instance\" \"main\" {\n  name = \"app-db\"\n  # ...\n}\n# workflow: engineers run `terraform workspace select prod` or\n# `terraform workspace select staging`, then `terraform apply`\n# from this same shared directory/config",
+      "choices": [
+        {
+          "id": "a",
+          "label": {
+            "en": "GCS backends cannot support state locking, so concurrent applies are unsafe by design",
+            "fr": "Les backends GCS ne supportent pas le verrouillage d'état, donc les applys concurrents sont dangereux par conception"
+          }
+        },
+        {
+          "id": "b",
+          "label": {
+            "en": "Using workspaces with a single shared directory/config for prod and staging makes it easy to apply against the wrong environment when someone forgets to select the right workspace; a directory-per-environment layout makes the target explicit instead of implicit shell state",
+            "fr": "Utiliser des workspaces avec un seul répertoire/config partagé pour prod et staging rend facile d'appliquer sur le mauvais environnement quand on oublie de sélectionner le bon workspace ; une disposition en répertoire-par-environnement rend la cible explicite au lieu d'un état de shell implicite"
+          }
+        },
+        {
+          "id": "c",
+          "label": {
+            "en": "The bucket needs a separate prefix generated randomly on every apply",
+            "fr": "Le bucket a besoin d'un prefix séparé généré aléatoirement à chaque apply"
+          }
+        },
+        {
+          "id": "d",
+          "label": {
+            "en": "resource \"google_sql_database_instance\" cannot be managed by Terraform in a shared state file",
+            "fr": "resource \"google_sql_database_instance\" ne peut pas être géré par Terraform dans un state partagé"
+          }
+        }
+      ],
+      "answerId": "b",
+      "explanation": {
+        "en": "GCS backends do support locking via object generation preconditions — that's why the expected lock error occurred. The real bug is organizational: workspaces keep the same config and just swap a state-file suffix, so which environment is targeted lives in invisible shell state (terraform workspace show) that's trivial to forget or mistype across engineers and terminals. A directory-per-environment layout makes the target visible in the path itself (e.g. cd envs/prod), removing this class of mistake at the cost of some config duplication.",
+        "fr": "Les backends GCS supportent bien le verrouillage via les préconditions de génération d'objet — c'est pourquoi l'erreur de verrou attendue s'est produite. Le vrai bug est organisationnel : les workspaces gardent la même config et ne changent qu'un suffixe de fichier d'état, donc l'environnement ciblé vit dans un état de shell invisible (terraform workspace show) trivial à oublier ou à mal saisir entre ingénieurs et terminaux. Une disposition en répertoire-par-environnement rend la cible visible dans le chemin lui-même (par ex. cd envs/prod), supprimant cette catégorie d'erreur au prix d'un peu de duplication de config."
+      },
+      "difficulty": 3
+    },
+    {
+      "id": "ex-devops-iac-tf-state-sensitivity",
+      "kind": "mcq",
+      "prompt": {
+        "en": "Why should a Terraform state file stored in a GCS bucket be treated as sensitive, restricted to a small IAM group?",
+        "fr": "Pourquoi un fichier d'état Terraform stocké dans un bucket GCS doit-il être traité comme sensible, restreint à un petit groupe IAM ?"
+      },
+      "choices": [
+        {
+          "id": "a",
+          "label": {
+            "en": "State files are always encrypted with a key only Terraform Cloud can read, so bucket IAM doesn't matter",
+            "fr": "Les fichiers d'état sont toujours chiffrés avec une clé que seul Terraform Cloud peut lire, donc l'IAM du bucket importe peu"
+          }
+        },
+        {
+          "id": "b",
+          "label": {
+            "en": "State files record the full attributes of every managed resource, which can include secrets in plaintext (e.g. generated database passwords), making broad read access a credential leak risk",
+            "fr": "Les fichiers d'état enregistrent les attributs complets de chaque ressource gérée, ce qui peut inclure des secrets en clair (par ex. des mots de passe de base générés), rendant un accès en lecture large risqué pour les identifiants"
+          }
+        },
+        {
+          "id": "c",
+          "label": {
+            "en": "State files only contain resource IDs, never attribute values",
+            "fr": "Les fichiers d'état ne contiennent que des IDs de ressources, jamais de valeurs d'attributs"
+          }
+        },
+        {
+          "id": "d",
+          "label": {
+            "en": "Terraform automatically redacts sensitive values before writing state to GCS",
+            "fr": "Terraform rédige automatiquement les valeurs sensibles avant d'écrire le state vers GCS"
+          }
+        }
+      ],
+      "answerId": "b",
+      "explanation": {
+        "en": "Terraform state is a complete record of resource attributes as Terraform last saw them, which routinely includes secrets (initial passwords, key material) in plaintext — marking an output as sensitive only redacts CLI display, not the state file itself. Anyone with read access to the state effectively has read access to those secrets, so bucket IAM and versioning matter as much as any other credential store.",
+        "fr": "Le state Terraform est un enregistrement complet des attributs de ressources tels que Terraform les a vus en dernier, ce qui inclut couramment des secrets (mots de passe initiaux, matériel de clés) en clair — marquer un output comme sensible ne rédige que l'affichage CLI, pas le fichier d'état lui-même. Quiconque a un accès en lecture au state a effectivement accès à ces secrets, donc l'IAM du bucket et le versioning comptent autant que pour tout autre coffre-fort de credentials."
+      },
+      "difficulty": 1
+    },
+    {
+      "id": "ex-devops-iac-secrets-leak",
+      "kind": "predict-output",
+      "prompt": {
+        "en": "This cloudbuild.yaml passes an API key into the image build as a substitution variable. What actually happens to that value?",
+        "fr": "Ce cloudbuild.yaml passe une clé API dans le build de l'image comme variable de substitution. Que devient réellement cette valeur ?"
+      },
+      "code": "steps:\n  - name: 'gcr.io/cloud-builders/docker'\n    args: ['build', '--build-arg', 'API_KEY=$_API_KEY', '-t', 'api:$COMMIT_SHA', '.']\nsubstitutions:\n  _API_KEY: 'sk-live-abc123'",
+      "choices": [
+        {
+          "id": "a",
+          "label": {
+            "en": "It stays local to the build and is discarded once the build finishes",
+            "fr": "Elle reste locale au build et est jetée une fois le build terminé"
+          }
+        },
+        {
+          "id": "b",
+          "label": {
+            "en": "It is baked into the image's build history/layers (recoverable via layer inspection) and also appears in plaintext in Cloud Build's logs and trigger configuration — a durable leak, not a transient one",
+            "fr": "Elle est cuite dans l'historique/les couches de l'image (récupérable par inspection des couches) et apparaît aussi en clair dans les logs et la configuration du trigger Cloud Build — une fuite durable, pas transitoire"
+          }
+        },
+        {
+          "id": "c",
+          "label": {
+            "en": "Cloud Build automatically strips substitution variables that look like secrets before logging",
+            "fr": "Cloud Build retire automatiquement les variables de substitution qui ressemblent à des secrets avant de logger"
+          }
+        },
+        {
+          "id": "d",
+          "label": {
+            "en": "--build-arg values are encrypted at rest inside the resulting image",
+            "fr": "Les valeurs --build-arg sont chiffrées au repos à l'intérieur de l'image résultante"
+          }
+        }
+      ],
+      "answerId": "b",
+      "explanation": {
+        "en": "Substitution variables are recorded as part of the build's history/configuration, and a --build-arg is captured in the resulting image's layer metadata — both durable and both readable by anyone with Cloud Build or Artifact Registry viewer access, or with a layer inspection tool. The correct pattern is Secret Manager referenced via availableSecrets/secretEnv, injected at runtime into the step's environment rather than a build-arg baked into layers, so the value never touches logs or the image itself.",
+        "fr": "Les variables de substitution sont enregistrées dans l'historique/la configuration du build, et un --build-arg est capturé dans les métadonnées de couche de l'image résultante — les deux durables et lisibles par quiconque a un accès viewer Cloud Build ou Artifact Registry, ou un outil d'inspection de couches. Le bon schéma est Secret Manager référencé via availableSecrets/secretEnv, injecté à l'exécution dans l'environnement de l'étape plutôt qu'un build-arg cuit dans les couches, pour que la valeur ne touche jamais les logs ni l'image elle-même."
+      },
+      "difficulty": 3
+    }
+  ]
+}

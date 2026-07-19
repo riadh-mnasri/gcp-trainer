@@ -130,15 +130,15 @@ The GCP pack targets 12 modules; content is written incrementally.
 | --- | --- |
 | Platform fundamentals | Available |
 | Compute options | Available |
-| Storage | Planned |
-| Databases | Planned |
-| Networking | Planned |
-| IAM & security | Planned |
-| Data & analytics | Planned |
-| Messaging & eventing | Planned |
-| Observability & SRE | Planned |
-| DevOps & IaC | Planned |
-| ML & AI | Planned |
+| Storage | Available |
+| Databases | Available |
+| Networking | Available |
+| IAM & security | Available |
+| Data & analytics | Available |
+| Messaging & eventing | Available |
+| Observability & SRE | Available |
+| DevOps & IaC | Available |
+| ML & AI | Available |
 | What's new on GCP | Planned |
 
 See `content/packs/gcp/pack.json` for the source of truth.

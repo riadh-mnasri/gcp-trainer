@@ -1,0 +1,755 @@
+{
+  "id": "observability-sre",
+  "title": { "en": "Observability & SRE", "fr": "Observabilité & SRE" },
+  "tagline": {
+    "en": "Monitoring, Logging, Trace, SLOs, error budgets",
+    "fr": "Monitoring, Logging, Trace, SLO, budgets d'erreur"
+  },
+  "icon": "🔭",
+  "lessons": [
+    {
+      "id": "observability-sre-monitoring",
+      "title": {
+        "en": "Cloud Monitoring: metrics, dashboards, alerting",
+        "fr": "Cloud Monitoring : métriques, tableaux de bord, alerting"
+      },
+      "minutes": 5,
+      "blocks": [
+        {
+          "type": "text",
+          "body": {
+            "en": "Cloud Monitoring auto-collects metrics for every GCP resource — CPU, request latency, queue depth — the moment the resource exists, no setup required. The interesting signals are usually business-specific instead: checkout conversion, per-tenant queue depth, cache hit ratio. For those you emit custom metrics, and since Google deprecated its bespoke Monitoring client libraries, the sanctioned path is OpenTelemetry: instrument once with the OTel SDK, export through the OTel Collector or the Ops Agent, and the metric lands under a custom.googleapis.com/ or workload.googleapis.com/ prefix, billed per active time series.",
+            "fr": "Cloud Monitoring collecte automatiquement les métriques de chaque ressource GCP — CPU, latence des requêtes, profondeur de file — dès qu'elle existe, sans aucune configuration. Les signaux vraiment intéressants sont en général propres au métier : taux de conversion au paiement, profondeur de file par tenant, taux de hit du cache. Pour ceux-là, vous émettez des métriques custom, et depuis que Google a déprécié ses bibliothèques client Monitoring maison, la voie recommandée est OpenTelemetry : instrumentez une fois avec le SDK OTel, exportez via l'OTel Collector ou l'Ops Agent, et la métrique atterrit sous un préfixe custom.googleapis.com/ ou workload.googleapis.com/, facturée par série temporelle active."
+          }
+        },
+        {
+          "type": "text",
+          "body": {
+            "en": "A dashboard is a read model; an alerting policy is the actual operational contract. A policy needs a condition (a metric threshold or an MQL/PromQL query, aggregated over an alignment period, evaluated over a trigger duration), one or more notification channels (email, Slack webhook, PagerDuty, or Pub/Sub for custom routing), and ideally a documentation field with a runbook link. Multi-condition policies combine with AND/OR; auto-close settings resolve stale incidents automatically so a transient blip doesn't page forever.",
+            "fr": "Un tableau de bord est un modèle de lecture ; une politique d'alerte est le véritable contrat opérationnel. Une politique a besoin d'une condition (un seuil de métrique ou une requête MQL/PromQL, agrégée sur une période d'alignement, évaluée sur une durée de déclenchement), d'un ou plusieurs canaux de notification (email, webhook Slack, PagerDuty, ou Pub/Sub pour un routage sur mesure), et idéalement d'un champ de documentation avec un lien vers un runbook. Les politiques multi-conditions se combinent en ET/OU ; la fermeture automatique résout les incidents obsolètes toute seule, pour qu'un pic transitoire ne page pas indéfiniment."
+          }
+        },
+        {
+          "type": "code",
+          "code": "# Alerting policy as code: threshold + notification channel, not a console click\ngcloud alpha monitoring policies create \\\n  --notification-channels=projects/my-app/notificationChannels/1234 \\\n  --display-name=\"API p99 latency high\" \\\n  --condition-display-name=\"p99 > 800ms for 5m\" \\\n  --condition-filter='metric.type=\"run.googleapis.com/request_latencies\" resource.type=\"cloud_run_revision\"' \\\n  --aggregation='{\"alignmentPeriod\":\"60s\",\"perSeriesAligner\":\"ALIGN_PERCENTILE_99\"}' \\\n  --duration=300s \\\n  --comparison=COMPARISON_GT \\\n  --threshold-value=800",
+          "caption": {
+            "en": "Codifying the policy means the notification channel can never be silently forgotten.",
+            "fr": "Coder la politique garantit que le canal de notification ne peut jamais être oublié en silence."
+          }
+        },
+        {
+          "type": "gotcha",
+          "body": {
+            "en": "Uptime checks run from multiple global points of presence against a public endpoint by default, which is exactly wrong for an internal API behind a load balancer with no public IP — you need a private uptime check routed through a VPC. The other classic trap: a console-built alerting policy with no notification channel attached saves without error and fires silently forever; nothing pages, nothing tickets, until someone stumbles on the incident list during a postmortem.",
+            "fr": "Les uptime checks interrogent par défaut un endpoint public depuis plusieurs points de présence mondiaux — exactement ce qu'il ne faut pas pour une API interne derrière un load balancer sans IP publique, qui a besoin d'un uptime check privé routé via un VPC. L'autre piège classique : une politique d'alerte créée dans la console sans canal de notification attaché s'enregistre sans erreur et se déclenche en silence pour toujours ; rien ne page, rien ne crée de ticket, jusqu'à ce que quelqu'un tombe sur la liste des incidents pendant un postmortem."
+          }
+        },
+        {
+          "type": "tip",
+          "body": {
+            "en": "Prefer MQL over the legacy filter-based condition builder, and manage alerting policies as Terraform (google_monitoring_alert_policy) rather than console clicks: policies reviewed in a pull request are far less likely to ship without a notification channel or with a threshold nobody sanity-checked. Keep synthetic uptime-check alerts and SLO burn-rate alerts in separate policies — mixing \"is it up\" with \"is it fast enough\" muddies the on-call runbook and the incident severity.",
+            "fr": "Préférez MQL au constructeur de conditions par filtres hérité, et gérez les politiques d'alerte en Terraform (google_monitoring_alert_policy) plutôt qu'à coups de clics console : une politique revue en pull request a bien moins de chances de partir sans canal de notification ou avec un seuil que personne n'a validé. Gardez les alertes d'uptime check synthétiques et les alertes de burn-rate de SLO dans des politiques séparées — mélanger « est-ce up » et « est-ce assez rapide » brouille le runbook d'astreinte et la gravité de l'incident."
+          }
+        }
+      ]
+    },
+    {
+      "id": "observability-sre-logging",
+      "title": {
+        "en": "Cloud Logging: router, sinks, cost control",
+        "fr": "Cloud Logging : routeur, sinks, maîtrise des coûts"
+      },
+      "minutes": 5,
+      "blocks": [
+        {
+          "type": "text",
+          "body": {
+            "en": "Every log entry passes through the Cloud Logging router before it lands anywhere. The two built-in sinks, _Required (audit logs Google won't let you drop) and _Default (everything else, retained 30 days), route into Cloud Logging storage; you add your own sinks to export a filtered subset to BigQuery (ad-hoc SQL analysis), Cloud Storage (cheap long-term archival), or Pub/Sub (real-time fan-out to a SIEM or a custom processor). A sink's inclusion filter decides what it captures; sinks are evaluated independently, so the same log entry can legitimately land in three places at once.",
+            "fr": "Chaque entrée de log passe par le routeur Cloud Logging avant d'atterrir où que ce soit. Les deux sinks intégrés, _Required (les logs d'audit que Google ne vous laisse pas supprimer) et _Default (tout le reste, conservé 30 jours), routent vers le stockage Cloud Logging ; vous ajoutez vos propres sinks pour exporter un sous-ensemble filtré vers BigQuery (analyse SQL ad hoc), Cloud Storage (archivage long terme bon marché), ou Pub/Sub (diffusion temps réel vers un SIEM ou un processeur custom). Le filtre d'inclusion d'un sink décide de ce qu'il capture ; les sinks s'évaluent indépendamment, donc la même entrée peut légitimement finir à trois endroits à la fois."
+          }
+        },
+        {
+          "type": "text",
+          "body": {
+            "en": "Log-based metrics turn log content into time series without touching application code: a counter metric counts matching entries (error rate per service), a distribution metric extracts a numeric field (response size, a custom latency logged as JSON). They feed the same alerting policies as any other metric. Retention is tiered: 30 days by default for _Default, up to 3650 days if you raise it (billed extra per GB stored beyond 30 days), and Log Analytics upgrades a bucket to a BigQuery-linked view so you can run SQL over logs in place, without paying for a separate export.",
+            "fr": "Les métriques basées sur les logs transforment le contenu des logs en séries temporelles sans toucher au code applicatif : une métrique compteur compte les entrées correspondantes (taux d'erreur par service), une métrique de distribution extrait un champ numérique (taille de réponse, une latence custom loguée en JSON). Elles alimentent les mêmes politiques d'alerte que n'importe quelle autre métrique. La rétention est par paliers : 30 jours par défaut pour _Default, jusqu'à 3650 jours si vous l'augmentez (facturé en plus par Go stocké au-delà de 30 jours), et Log Analytics transforme un bucket en vue liée à BigQuery pour interroger les logs en SQL sur place, sans payer un export séparé."
+          }
+        },
+        {
+          "type": "code",
+          "code": "# Exclusion filter: drop noisy debug logs before ingestion, cutting cost —\n# but they never reach the bucket, so no sink and no log-based metric sees them\ngcloud logging sinks update _Default \\\n  --add-exclusion=name=drop-debug,filter='severity<WARNING AND resource.type=\"cloud_run_revision\"'\n\n# A dedicated sink still gets its own filter, independent of exclusions above\ngcloud logging sinks create errors-to-bq \\\n  bigquery.googleapis.com/projects/my-app/datasets/logs \\\n  --log-filter='severity>=ERROR'",
+          "caption": {
+            "en": "Exclusions act at ingestion time — they save money by making the logs disappear entirely.",
+            "fr": "Les exclusions agissent à l'ingestion — elles économisent en faisant disparaître les logs purement et simplement."
+          }
+        },
+        {
+          "type": "gotcha",
+          "body": {
+            "en": "An exclusion filter doesn't downgrade or redirect logs, it discards them before storage. Teams routinely exclude noisy DEBUG-level logs project-wide to control cost, then discover months later that a log-based metric or an export sink they'd forgotten about depended on exactly those entries — the metric silently flatlines at zero and nobody notices until an incident needs the data that no longer exists. If a log stream might matter later, route it to a cheap Cloud Storage sink instead of excluding it outright.",
+            "fr": "Un filtre d'exclusion ne dégrade ni ne redirige les logs, il les jette avant le stockage. Les équipes excluent couramment les logs DEBUG bruyants à l'échelle du projet pour maîtriser les coûts, puis découvrent des mois plus tard qu'une métrique basée sur les logs ou un sink d'export oublié dépendait exactement de ces entrées — la métrique s'aplatit en silence à zéro et personne ne le remarque avant qu'un incident n'ait besoin de données qui n'existent plus. Si un flux de logs peut compter plus tard, routez-le vers un sink Cloud Storage bon marché plutôt que de l'exclure d'un bloc."
+          }
+        },
+        {
+          "type": "tip",
+          "body": {
+            "en": "Default to structured logging (a jsonPayload, not a free-text string) from day one: it's what makes Log Analytics and log-based metrics cheap to query and reliable to parse, instead of everyone writing brittle regex filters against a log line format that changes on the next deploy. Budget-conscious teams sample or exclude verbose DEBUG logs in production but keep them uncapped in staging, and route everything that touches compliance or billing to a long-retention bucket or BigQuery from day one rather than retrofitting it after an audit request.",
+            "fr": "Passez par défaut aux logs structurés (un jsonPayload, pas une chaîne libre) dès le premier jour : c'est ce qui rend Log Analytics et les métriques basées sur les logs bon marché à interroger et fiables à parser, plutôt que tout le monde écrivant des filtres regex fragiles contre un format de ligne qui change au prochain déploiement. Les équipes attentives au budget échantillonnent ou excluent les logs DEBUG verbeux en production mais les gardent illimités en staging, et routent dès le départ tout ce qui touche à la conformité ou à la facturation vers un bucket à rétention longue ou BigQuery, plutôt que de le rattraper après une demande d'audit."
+          }
+        }
+      ]
+    },
+    {
+      "id": "observability-sre-trace-profiler",
+      "title": {
+        "en": "Cloud Trace & Profiler: latency and hotspots",
+        "fr": "Cloud Trace & Profiler : latence et points chauds"
+      },
+      "minutes": 5,
+      "blocks": [
+        {
+          "type": "text",
+          "body": {
+            "en": "Distributed tracing reconstructs the path of one request across services as a tree of spans, each with a start time, duration and attributes. Cloud Run and GKE workloads get this almost for free through OpenTelemetry auto-instrumentation for common frameworks (gRPC, HTTP clients, common web frameworks), propagating a trace context header (traceparent) across service boundaries so a single trace ID stitches together spans emitted by five different services. The payoff is a latency waterfall: instead of guessing which hop is slow, you see the exact span — the third downstream call, not the frontend — that owns the 400ms.",
+            "fr": "Le traçage distribué reconstruit le trajet d'une requête à travers les services sous forme d'un arbre de spans, chacun avec une heure de début, une durée et des attributs. Les charges Cloud Run et GKE l'obtiennent presque gratuitement grâce à l'auto-instrumentation OpenTelemetry pour les frameworks courants (gRPC, clients HTTP, frameworks web usuels), qui propage un en-tête de contexte de trace (traceparent) entre services pour qu'un seul ID de trace recoud les spans émis par cinq services différents. Le bénéfice est une cascade de latence lisible : au lieu de deviner quel saut est lent, vous voyez le span exact — le troisième appel en aval, pas le frontend — responsable des 400 ms."
+          }
+        },
+        {
+          "type": "text",
+          "body": {
+            "en": "Cloud Trace samples by default rather than recording every request — historically around 1 in 1000, or a QPS-based cap — because tracing every request at scale is both expensive to store and adds overhead on the hot path. That's head-based sampling: the decision is made at the start of the request, before anyone knows it will turn out slow or error, so a low sampling rate can simply miss the one-in-ten-thousand pathological request an on-call engineer is hunting for. The workaround is forcing a trace on demand — a debug header or query parameter that guarantees 100% sampling for one flagged request.",
+            "fr": "Cloud Trace échantillonne par défaut plutôt que d'enregistrer chaque requête — historiquement environ 1 sur 1000, ou un plafond basé sur le QPS — car tracer chaque requête à l'échelle coûte cher à stocker et ajoute de la surcharge sur le chemin critique. C'est de l'échantillonnage head-based : la décision se prend au début de la requête, avant de savoir si elle sera lente ou en erreur, donc un taux d'échantillonnage bas peut tout simplement rater la requête pathologique sur dix mille que l'ingénieur d'astreinte traque. Le contournement est de forcer une trace à la demande — un en-tête de debug ou un paramètre de requête garantissant 100 % d'échantillonnage pour une requête marquée."
+          }
+        },
+        {
+          "type": "code",
+          "code": "# Forcing full sampling for one flagged request, without touching the global rate\ncurl -H \"X-Cloud-Trace-Context: 105445aa7843bc8bf206b120001000/0;o=1\" \\\n  https://api.example.com/orders/8842\n\n# o=1 means \"sampled\": this single request is captured end to end\n# regardless of the service's configured sampling probability",
+          "caption": {
+            "en": "The trace context header's trailing flag overrides the sampler for one request.",
+            "fr": "Le flag final de l'en-tête de contexte de trace outrepasse l'échantillonneur pour une requête."
+          }
+        },
+        {
+          "type": "gotcha",
+          "body": {
+            "en": "A slow span in Cloud Trace tells you where time went, not why — a span dominated by wait time could be a downstream network call, a lock, or a database query, none of which Profiler explains. Profiler is a different tool for a different question: it continuously samples CPU time, wall time, or heap allocations across a fleet at low overhead (it's designed to run in production permanently), and answers \"which function is burning CPU\" or \"what's allocating all this memory.\" Reaching for Profiler on a network-bound latency spike wastes time; reach for it only once Trace or a resource metric points at CPU or memory, not I/O.",
+            "fr": "Un span lent dans Cloud Trace vous dit où le temps est parti, pas pourquoi — un span dominé par de l'attente peut être un appel réseau en aval, un verrou, ou une requête base de données, rien de tout cela n'étant expliqué par Profiler. Profiler est un outil différent pour une question différente : il échantillonne en continu le temps CPU, le temps mur ou les allocations de tas sur une flotte à faible coût (il est conçu pour tourner en production en permanence), et répond à « quelle fonction brûle du CPU » ou « qui alloue toute cette mémoire ». Dégainer Profiler sur un pic de latence réseau fait perdre du temps ; n'y recourez qu'une fois que Trace ou une métrique de ressource pointe vers le CPU ou la mémoire, pas vers l'I/O."
+          }
+        },
+        {
+          "type": "tip",
+          "body": {
+            "en": "Correlate the two signals instead of choosing one: inject the active trace ID into every log line a request touches (structured logging makes this a one-field addition), and Cloud Logging's UI will jump straight from a slow trace to the exact log lines emitted during that request. That single wiring turns \"why was this request slow\" from a cross-tool archaeology exercise into a two-click lookup, and it's cheap to add compared to retrofitting it during an incident.",
+            "fr": "Corrélez les deux signaux plutôt que de choisir : injectez l'ID de trace actif dans chaque ligne de log touchée par une requête (le logging structuré rend cela aussi simple qu'un champ de plus), et l'interface Cloud Logging permet de sauter directement d'une trace lente aux lignes de log exactes émises pendant cette requête. Ce simple câblage transforme « pourquoi cette requête était lente » d'une fouille archéologique entre outils en une recherche à deux clics, et c'est bon marché à ajouter comparé à le faire a posteriori en plein incident."
+          }
+        }
+      ]
+    },
+    {
+      "id": "observability-sre-slo",
+      "title": {
+        "en": "SLOs and error budgets",
+        "fr": "SLO et budgets d'erreur"
+      },
+      "minutes": 5,
+      "blocks": [
+        {
+          "type": "text",
+          "body": {
+            "en": "A good SLI measures what the user actually experiences, not what's easy to instrument: the proportion of HTTP requests that returned quickly and without error, not CPU utilization or disk free space, which are causes, not symptoms. Two shapes dominate: request-based (good events / valid events, e.g. non-5xx responses under 500ms) and window-based (was this minute \"good\" by some aggregate rule) — request-based is preferred when you have enough traffic, since it doesn't dilute a bad minute across a low-traffic window. Picking the wrong SLI is the single most common SRE mistake: a service can look perfectly healthy on infrastructure metrics while users are timing out.",
+            "fr": "Un bon SLI mesure ce que l'utilisateur vit réellement, pas ce qui est facile à instrumenter : la proportion de requêtes HTTP qui ont répondu vite et sans erreur, pas l'utilisation CPU ou l'espace disque libre, qui sont des causes, pas des symptômes. Deux formes dominent : request-based (événements bons / événements valides, par ex. réponses non-5xx en moins de 500 ms) et window-based (est-ce que cette minute était « bonne » selon une règle agrégée) — le request-based est préféré quand le trafic suffit, car il ne dilue pas une mauvaise minute dans une fenêtre à faible trafic. Choisir le mauvais SLI est l'erreur SRE la plus courante : un service peut sembler parfaitement sain sur les métriques d'infrastructure pendant que les utilisateurs subissent des timeouts."
+          }
+        },
+        {
+          "type": "text",
+          "body": {
+            "en": "An SLO target is a negotiation with reality, not an aspiration: 99.9% (about 43 minutes of budget a month) versus 99.99% (about 4 minutes) is not a rounding difference, it's an order-of-magnitude jump in engineering cost — multi-region failover, aggressive circuit breaking, near-zero-downtime deploys. Set it from what the business and the dependency chain can actually support: a service can't promise 99.99% while depending on a payment provider that only offers 99.9%. The error budget is simply 1 minus the SLO, reframed as a spendable resource — every deploy, every risky migration, every experiment draws down the same budget as outages do.",
+            "fr": "Une cible de SLO est une négociation avec le réel, pas une aspiration : 99,9 % (environ 43 minutes de budget par mois) contre 99,99 % (environ 4 minutes) n'est pas une nuance d'arrondi, c'est un bond d'un ordre de grandeur dans le coût d'ingénierie — bascule multi-région, circuit breaking agressif, déploiements quasi sans coupure. Fixez-la d'après ce que le métier et la chaîne de dépendances peuvent réellement soutenir : un service ne peut pas promettre 99,99 % en dépendant d'un prestataire de paiement qui n'offre que 99,9 %. Le budget d'erreur est simplement 1 moins le SLO, reformulé en ressource dépensable — chaque déploiement, chaque migration risquée, chaque expérimentation puise dans le même budget que les pannes."
+          }
+        },
+        {
+          "type": "code",
+          "code": "# A request-based SLO on a Cloud Run service: 99.9% of requests\n# under 500ms over a rolling 30-day compliance window\ndisplayName: \"checkout-api-latency-slo\"\nserviceLevelIndicator:\n  requestBased:\n    distributionCut:\n      distributionFilter: >\n        metric.type=\"run.googleapis.com/request_latencies\"\n        resource.type=\"cloud_run_revision\"\n      range: { max: 500 }\ngoal: 0.999\nrollingPeriod: 2592000s",
+          "caption": {
+            "en": "The SLO is defined once and both dashboards and burn-rate alerts read from it.",
+            "fr": "Le SLO est défini une fois, et tableaux de bord comme alertes de burn-rate le lisent."
+          }
+        },
+        {
+          "type": "gotcha",
+          "body": {
+            "en": "A naive alert on \"SLO violated\" fires only after the budget is already spent — too late to prevent the breach, only useful for the postmortem. The Google SRE workbook's fix is multiwindow, multi-burn-rate alerting: a fast-burn condition (e.g. consuming the whole monthly budget in a few hours, checked over a short and a slightly longer window to avoid noise) pages immediately, while a slow-burn condition (the budget would be gone in days, not hours) opens a ticket instead of paging. Alerting on a single fixed threshold either pages for noise or misses real burns entirely — there's no threshold that serves both severities.",
+            "fr": "Une alerte naïve sur « SLO violé » ne se déclenche qu'une fois le budget déjà consommé — trop tard pour éviter la violation, utile seulement pour le postmortem. Le correctif du SRE workbook de Google est l'alerting multi-fenêtre, multi-taux de combustion : une condition de combustion rapide (par ex. consommer tout le budget mensuel en quelques heures, vérifiée sur une fenêtre courte et une légèrement plus longue pour éviter le bruit) page immédiatement, tandis qu'une condition de combustion lente (le budget serait épuisé en jours, pas en heures) ouvre un ticket plutôt que de pager. Alerter sur un seuil fixe unique soit page pour du bruit, soit rate les vraies combustions — aucun seuil ne sert les deux gravités."
+          }
+        },
+        {
+          "type": "tip",
+          "body": {
+            "en": "The error budget's real job is arbitrating the standing tension between reliability work and feature velocity without a meeting every time: budget healthy, ship freely; budget nearly exhausted, an agreed policy kicks in — freeze risky launches, redirect the team to reliability fixes, no debate needed because everyone signed off on the policy before the fire started. That's the senior-engineer answer to \"who decides when we stop shipping to fix reliability\": nobody decides in the moment, the budget already did.",
+            "fr": "Le vrai rôle du budget d'erreur est d'arbitrer la tension permanente entre travail de fiabilité et vélocité produit sans réunion à chaque fois : budget sain, on livre librement ; budget presque épuisé, une politique convenue s'enclenche — gel des lancements risqués, équipe redirigée vers des correctifs de fiabilité, sans débat car tout le monde a validé la politique avant que le feu ne prenne. C'est la réponse d'ingénieur senior à « qui décide qu'on arrête de livrer pour réparer la fiabilité » : personne ne décide sur l'instant, le budget l'a déjà fait."
+          }
+        }
+      ]
+    },
+    {
+      "id": "observability-sre-practice",
+      "title": {
+        "en": "Putting it together: alert fatigue and cost",
+        "fr": "Mise en pratique : fatigue d'alerte et coûts"
+      },
+      "minutes": 5,
+      "blocks": [
+        {
+          "type": "text",
+          "body": {
+            "en": "Alert fatigue is a training problem: every alert that fires without requiring action teaches the on-call engineer, correctly, that alerts are safe to snooze — and eventually a real one gets snoozed too. The fix is structural, not willpower: alert on symptoms that map to user pain (SLO burn rate, error rate, latency percentile) rather than on causes (CPU at 80%, a single pod restarting), require every paging alert to link a runbook, and delete or downgrade to a ticket any alert that hasn't required action in the last few incidents. A service with zero alerting isn't safer than one that pages on everything — both hide the same failure.",
+            "fr": "La fatigue d'alerte est un problème d'entraînement : chaque alerte qui se déclenche sans nécessiter d'action apprend à l'ingénieur d'astreinte, à raison, qu'on peut ignorer les alertes en toute sécurité — et finit par faire ignorer une vraie. Le correctif est structurel, pas une question de volonté : alerter sur des symptômes qui reflètent la douleur utilisateur (taux de combustion du SLO, taux d'erreur, percentile de latence) plutôt que sur des causes (CPU à 80 %, un pod isolé qui redémarre), exiger qu'une alerte qui page pointe vers un runbook, et supprimer ou rétrograder en ticket toute alerte qui n'a demandé aucune action lors des derniers incidents. Un service sans aucune alerte n'est pas plus sûr qu'un service qui page sur tout — les deux cachent la même panne."
+          }
+        },
+        {
+          "type": "text",
+          "body": {
+            "en": "Custom metrics and log-based metrics are billed by active time series, and cardinality is the silent multiplier: a metric labeled by user_id, request_id, or pod name creates a new time series per distinct value, so a metric intended to track \"errors per endpoint\" (dozens of series) accidentally becomes \"errors per endpoint per user\" (millions), blowing past the per-project custom-metric-descriptor limits and multiplying the ingestion bill without anyone changing a dashboard. The rule of thumb: labels should be low-cardinality dimensions you'd actually want to slice a chart by (region, status code, service name), never an identifier unique per request or per customer.",
+            "fr": "Les métriques custom et les métriques basées sur les logs sont facturées par série temporelle active, et la cardinalité est le multiplicateur silencieux : une métrique étiquetée par user_id, request_id ou nom de pod crée une nouvelle série par valeur distincte, si bien qu'une métrique censée suivre « erreurs par endpoint » (quelques dizaines de séries) devient accidentellement « erreurs par endpoint par utilisateur » (des millions), dépassant les limites de descripteurs de métriques custom par projet et multipliant la facture d'ingestion sans que personne ne touche à un tableau de bord. La règle de base : les labels doivent être des dimensions à faible cardinalité qu'on voudrait vraiment utiliser pour trancher un graphique (région, code de statut, nom de service), jamais un identifiant unique par requête ou par client."
+          }
+        },
+        {
+          "type": "code",
+          "code": "# Cardinality trap: one label turns a handful of series into millions\notel_meter.create_counter(\"checkout_errors\").add(1, {\n  \"endpoint\": \"/checkout\",\n  \"status_code\": \"500\",\n  \"user_id\": user.id,          # unbounded: one new time series per user\n})\n\n# Fixed: keep high-cardinality identifiers in the trace/log, not the metric label\notel_meter.create_counter(\"checkout_errors\").add(1, {\n  \"endpoint\": \"/checkout\",\n  \"status_code\": \"500\",\n})",
+          "caption": {
+            "en": "Push identifiers to logs and traces; keep metric labels to a small, bounded set of values.",
+            "fr": "Renvoyez les identifiants vers logs et traces ; gardez les labels de métriques sur un petit ensemble borné de valeurs."
+          }
+        },
+        {
+          "type": "gotcha",
+          "body": {
+            "en": "A log-based counter metric filtered on jsonPayload.user_id as an extracted label hits the same wall from the logging side: Cloud Logging happily creates one time series per distinct value it sees, and a project can silently exceed its custom metric descriptor quota during a traffic spike involving many distinct users, at which point new time series stop being created and the metric quietly under-reports right when it matters most — during the incident it was built to catch.",
+            "fr": "Une métrique compteur basée sur les logs filtrée sur jsonPayload.user_id comme label extrait heurte le même mur côté logging : Cloud Logging crée volontiers une série temporelle par valeur distincte rencontrée, et un projet peut silencieusement dépasser son quota de descripteurs de métriques custom lors d'un pic de trafic impliquant de nombreux utilisateurs distincts — à partir de là, plus aucune nouvelle série n'est créée et la métrique sous-reporte discrètement, précisément quand cela compte le plus : pendant l'incident qu'elle était censée détecter."
+          }
+        },
+        {
+          "type": "tip",
+          "body": {
+            "en": "On-call basics worth codifying before the first real incident: a rotation with a clear escalation path, a severity matrix everyone agrees on in advance, and a shared incident channel with one owner (not a committee) during the event. Afterward, run a blameless postmortem: reconstruct the timeline, name the systemic gaps (missing alert, unclear runbook, absent SLO) rather than the person who happened to be paged, and track action items to completion like any other backlog item — a postmortem with no merged follow-up is just an expensive meeting.",
+            "fr": "Bases d'astreinte à codifier avant le premier vrai incident : une rotation avec un chemin d'escalade clair, une matrice de gravité que tout le monde a validée à l'avance, et un canal d'incident partagé avec un seul propriétaire (pas un comité) pendant l'événement. Ensuite, menez un postmortem blameless : reconstituez la chronologie, nommez les manques systémiques (alerte manquante, runbook flou, SLO absent) plutôt que la personne qui a eu la malchance d'être pagée, et suivez les actions jusqu'à leur clôture comme n'importe quel autre élément de backlog — un postmortem sans suivi mergé n'est qu'une réunion coûteuse."
+          }
+        }
+      ]
+    }
+  ],
+  "flashcards": [
+    {
+      "id": "fc-observability-sre-custom-metrics",
+      "front": {
+        "en": "When do you reach for a custom metric via OpenTelemetry instead of a built-in GCP metric?",
+        "fr": "Quand utiliser une métrique custom via OpenTelemetry plutôt qu'une métrique GCP intégrée ?"
+      },
+      "back": {
+        "en": "Built-in metrics cover infrastructure signals (CPU, request latency, queue depth) automatically. Custom metrics are for business-specific signals GCP can't know about (cart abandonment, per-tenant queue depth); instrument once with the OTel SDK and export via the Collector or Ops Agent — the sanctioned path since Google deprecated its bespoke client libraries.",
+        "fr": "Les métriques intégrées couvrent les signaux d'infrastructure (CPU, latence, profondeur de file) automatiquement. Les métriques custom servent aux signaux propres au métier que GCP ne peut pas connaître (abandon de panier, file par tenant) ; instrumentez une fois avec le SDK OTel et exportez via le Collector ou l'Ops Agent — la voie recommandée depuis que Google a déprécié ses bibliothèques client maison."
+      }
+    },
+    {
+      "id": "fc-observability-sre-alert-policy",
+      "front": {
+        "en": "What three things does a Cloud Monitoring alerting policy actually need to be useful?",
+        "fr": "De quoi une politique d'alerte Cloud Monitoring a-t-elle réellement besoin pour être utile ?"
+      },
+      "back": {
+        "en": "A condition (threshold or MQL/PromQL query, aggregated and evaluated over a duration), at least one notification channel, and ideally a documentation field linking a runbook. A policy with a condition but no channel saves without error and fires silently forever.",
+        "fr": "D'une condition (seuil ou requête MQL/PromQL, agrégée et évaluée sur une durée), d'au moins un canal de notification, et idéalement d'un champ de documentation avec un runbook. Une politique avec une condition mais sans canal s'enregistre sans erreur et se déclenche en silence pour toujours."
+      }
+    },
+    {
+      "id": "fc-observability-sre-uptime-checks",
+      "front": {
+        "en": "Why would a private uptime check be required instead of the default kind?",
+        "fr": "Pourquoi aurait-on besoin d'un uptime check privé plutôt que du type par défaut ?"
+      },
+      "back": {
+        "en": "Default uptime checks probe a public endpoint from external global points of presence. An internal API behind a load balancer with no public IP is unreachable from those checkers — it needs a private uptime check routed through a VPC connector instead.",
+        "fr": "Les uptime checks par défaut sondent un endpoint public depuis des points de présence externes mondiaux. Une API interne derrière un load balancer sans IP publique est inatteignable depuis ces sondes — elle a besoin d'un uptime check privé routé via un connecteur VPC."
+      }
+    },
+    {
+      "id": "fc-observability-sre-log-router",
+      "front": {
+        "en": "What's the difference between the _Required and _Default log sinks?",
+        "fr": "Quelle est la différence entre les sinks de log _Required et _Default ?"
+      },
+      "back": {
+        "en": "_Required captures audit logs (admin activity, system events) Google doesn't let you exclude or delete early. _Default captures everything else and is retained 30 days by default. Custom sinks are added on top, each with its own inclusion filter, and don't replace either built-in sink.",
+        "fr": "_Required capture les logs d'audit (activité admin, événements système) que Google ne vous laisse ni exclure ni supprimer prématurément. _Default capture tout le reste et est conservé 30 jours par défaut. Les sinks custom s'ajoutent par-dessus, chacun avec son propre filtre d'inclusion, sans remplacer les sinks intégrés."
+      }
+    },
+    {
+      "id": "fc-observability-sre-sinks-destinations",
+      "front": {
+        "en": "Match a log export destination — BigQuery, Cloud Storage, Pub/Sub — to its typical use case.",
+        "fr": "Associez une destination d'export de logs — BigQuery, Cloud Storage, Pub/Sub — à son usage typique."
+      },
+      "back": {
+        "en": "BigQuery: ad-hoc SQL analysis over logs (and the backing store for Log Analytics). Cloud Storage: cheap long-term archival for compliance retention. Pub/Sub: real-time fan-out to a SIEM, a custom processor, or another system needing logs as they arrive.",
+        "fr": "BigQuery : analyse SQL ad hoc sur les logs (et le stockage sous-jacent de Log Analytics). Cloud Storage : archivage long terme bon marché pour la conformité. Pub/Sub : diffusion temps réel vers un SIEM, un processeur custom, ou tout système ayant besoin des logs au fil de l'eau."
+      }
+    },
+    {
+      "id": "fc-observability-sre-exclusion-filters",
+      "front": {
+        "en": "What actually happens to a log entry matched by an exclusion filter?",
+        "fr": "Que devient réellement une entrée de log capturée par un filtre d'exclusion ?"
+      },
+      "back": {
+        "en": "It's discarded before it reaches Cloud Logging storage — not downgraded, not redirected. Any log-based metric or sink that depended on those entries silently stops seeing them, which is why excluded log types should first be evaluated for downstream dependencies, not just cost.",
+        "fr": "Elle est jetée avant d'atteindre le stockage Cloud Logging — ni dégradée, ni redirigée. Toute métrique basée sur les logs ou tout sink qui en dépendait cesse silencieusement de les voir, d'où l'intérêt d'évaluer d'abord les dépendances en aval d'un type de log exclu, pas seulement le coût."
+      }
+    },
+    {
+      "id": "fc-observability-sre-log-analytics",
+      "front": {
+        "en": "What does Log Analytics add on top of a Cloud Logging bucket, and what doesn't it change?",
+        "fr": "Qu'apporte Log Analytics par-dessus un bucket Cloud Logging, et que ne change-t-il pas ?"
+      },
+      "back": {
+        "en": "It links the bucket to a BigQuery-style SQL view so you can query logs in place without a separate export job. It doesn't change retention billing — you still pay for storage beyond the free 30-day tier, and the underlying data model is unchanged.",
+        "fr": "Il lie le bucket à une vue de type BigQuery interrogeable en SQL, sans job d'export séparé. Il ne change pas la facturation de rétention — vous payez toujours le stockage au-delà du palier gratuit de 30 jours, et le modèle de données sous-jacent reste identique."
+      }
+    },
+    {
+      "id": "fc-observability-sre-trace-sampling",
+      "front": {
+        "en": "Cloud Trace samples requests by default instead of recording all of them. What's the trade-off, and how do you force a specific request to be captured?",
+        "fr": "Cloud Trace échantillonne les requêtes par défaut au lieu de toutes les enregistrer. Quel est le compromis, et comment forcer la capture d'une requête précise ?"
+      },
+      "back": {
+        "en": "Tracing every request adds storage cost and hot-path overhead, so Trace uses head-based sampling (a fraction decided before the outcome is known), which can miss rare pathological requests. To guarantee capture of one flagged request, set the sampled flag (o=1) in the trace context header, overriding the default rate for that request only.",
+        "fr": "Tracer chaque requête ajoute un coût de stockage et de la surcharge sur le chemin critique, donc Trace utilise un échantillonnage head-based (une fraction décidée avant de connaître l'issue), qui peut rater des requêtes pathologiques rares. Pour garantir la capture d'une requête marquée, positionnez le flag sampled (o=1) dans l'en-tête de contexte de trace, outrepassant le taux par défaut pour cette seule requête."
+      }
+    },
+    {
+      "id": "fc-observability-sre-trace-vs-profiler",
+      "front": {
+        "en": "A span in Cloud Trace is slow. When do you reach for Profiler instead of just staring harder at the trace?",
+        "fr": "Un span est lent dans Cloud Trace. Quand recourir à Profiler plutôt que de fixer la trace plus fort ?"
+      },
+      "back": {
+        "en": "Only once the slowness is attributable to CPU or memory work, not I/O wait — a slow span could be a network call or a lock, which Profiler can't explain. Profiler continuously samples CPU time, wall time, or heap allocations at low overhead to answer 'which function is burning CPU or allocating memory,' a different question than Trace's latency waterfall.",
+        "fr": "Seulement une fois la lenteur attribuable à du travail CPU ou mémoire, pas à de l'attente I/O — un span lent peut être un appel réseau ou un verrou, que Profiler ne peut pas expliquer. Profiler échantillonne en continu le temps CPU, le temps mur ou les allocations de tas à faible coût pour répondre à « quelle fonction brûle du CPU ou alloue de la mémoire », une question différente de la cascade de latence de Trace."
+      }
+    },
+    {
+      "id": "fc-observability-sre-sli",
+      "front": {
+        "en": "What makes an SLI good versus a metric that just happens to be easy to instrument?",
+        "fr": "Qu'est-ce qui rend un SLI bon, par opposition à une métrique juste facile à instrumenter ?"
+      },
+      "back": {
+        "en": "A good SLI reflects what the user experiences (the proportion of requests served correctly and quickly), not an internal health signal like CPU or disk usage, which are causes, not symptoms. Request-based SLIs (good events / valid events) are usually preferred over window-based ones once traffic is high enough.",
+        "fr": "Un bon SLI reflète ce que vit l'utilisateur (la proportion de requêtes servies correctement et rapidement), pas un signal de santé interne comme le CPU ou l'usage disque, qui sont des causes, pas des symptômes. Les SLI request-based (événements bons / événements valides) sont généralement préférés aux window-based une fois le trafic suffisant."
+      }
+    },
+    {
+      "id": "fc-observability-sre-slo-target",
+      "front": {
+        "en": "Why is going from 99.9% to 99.99% availability not just 'a bit more effort'?",
+        "fr": "Pourquoi passer de 99,9 % à 99,99 % de disponibilité n'est pas juste « un peu plus d'effort » ?"
+      },
+      "back": {
+        "en": "It's roughly a 10x cut in allowed downtime (about 43 minutes/month to about 4 minutes/month) and typically an order-of-magnitude jump in engineering cost: multi-region failover, aggressive circuit breaking, near-zero-downtime deploys. The target should match what the business and its dependencies can actually support, not an aspirational round number.",
+        "fr": "C'est environ une réduction ×10 du temps d'indisponibilité toléré (environ 43 min/mois contre environ 4 min/mois) et typiquement un bond d'un ordre de grandeur dans le coût d'ingénierie : bascule multi-région, circuit breaking agressif, déploiements quasi sans coupure. La cible doit correspondre à ce que le métier et ses dépendances peuvent réellement soutenir, pas à un chiffre rond aspirationnel."
+      }
+    },
+    {
+      "id": "fc-observability-sre-burn-rate",
+      "front": {
+        "en": "What problem does multiwindow, multi-burn-rate alerting solve that a single SLO-breach alert doesn't?",
+        "fr": "Quel problème l'alerting multi-fenêtre, multi-taux de combustion résout-il qu'une simple alerte de violation de SLO ne résout pas ?"
+      },
+      "back": {
+        "en": "A single 'SLO violated' alert fires only after the budget is already spent — too late to prevent the breach. Multi-burn-rate alerting pages fast on a short-window, high-burn condition (budget gone in hours) and only tickets on a slow-burn condition (budget gone in days), catching real incidents early without paging on noise.",
+        "fr": "Une alerte unique « SLO violé » ne se déclenche qu'une fois le budget déjà consommé — trop tard pour éviter la violation. L'alerting multi-taux de combustion page vite sur une condition à fenêtre courte et forte combustion (budget épuisé en heures) et se contente d'un ticket sur une condition à combustion lente (budget épuisé en jours), attrapant les vrais incidents tôt sans pager sur du bruit."
+      }
+    },
+    {
+      "id": "fc-observability-sre-error-budget-policy",
+      "front": {
+        "en": "How does an error budget resolve the standing tension between reliability work and feature velocity?",
+        "fr": "Comment le budget d'erreur résout-il la tension permanente entre travail de fiabilité et vélocité produit ?"
+      },
+      "back": {
+        "en": "It's a pre-agreed policy, not a real-time argument: while the budget is healthy, teams ship freely; once it's nearly exhausted, an agreed rule kicks in (freeze risky launches, redirect to reliability work) that nobody has to renegotiate mid-incident because everyone signed off on it beforehand.",
+        "fr": "C'est une politique convenue à l'avance, pas une dispute en temps réel : tant que le budget est sain, les équipes livrent librement ; une fois presque épuisé, une règle convenue s'enclenche (gel des lancements risqués, redirection vers la fiabilité) que personne n'a à renégocier en plein incident car tout le monde l'a validée au préalable."
+      }
+    },
+    {
+      "id": "fc-observability-sre-cardinality",
+      "front": {
+        "en": "Why does labeling a custom or log-based metric with user_id or request_id quietly blow up the observability bill?",
+        "fr": "Pourquoi étiqueter une métrique custom ou basée sur les logs avec user_id ou request_id fait-il silencieusement exploser la facture d'observabilité ?"
+      },
+      "back": {
+        "en": "Custom metrics are billed per active time series, and each distinct label value creates a new series. A high-cardinality label multiplies a handful of intended series (per endpoint) into millions (per endpoint per user), hitting per-project descriptor limits and inflating ingestion cost — identifiers belong in logs and traces, not metric labels.",
+        "fr": "Les métriques custom sont facturées par série temporelle active, et chaque valeur de label distincte crée une nouvelle série. Un label à forte cardinalité multiplie une poignée de séries prévues (par endpoint) en millions (par endpoint par utilisateur), heurtant les limites de descripteurs par projet et gonflant le coût d'ingestion — les identifiants ont leur place dans les logs et les traces, pas dans les labels de métriques."
+      }
+    }
+  ],
+  "exercises": [
+    {
+      "id": "ex-observability-sre-choose-sli",
+      "kind": "mcq",
+      "prompt": {
+        "en": "A checkout API's infrastructure dashboard shows CPU at 40% and memory at healthy levels, yet customers report the checkout button 'hangs.' Which SLI would have caught this?",
+        "fr": "Le tableau de bord d'infrastructure d'une API de paiement montre un CPU à 40 % et une mémoire saine, pourtant les clients signalent que le bouton de paiement « se bloque ». Quel SLI aurait détecté ce problème ?"
+      },
+      "choices": [
+        {
+          "id": "a",
+          "label": {
+            "en": "Average CPU utilization across the fleet",
+            "fr": "Utilisation CPU moyenne sur la flotte"
+          }
+        },
+        {
+          "id": "b",
+          "label": {
+            "en": "Proportion of checkout requests completed under a latency threshold without error",
+            "fr": "Proportion de requêtes de paiement terminées sous un seuil de latence sans erreur"
+          }
+        },
+        {
+          "id": "c",
+          "label": {
+            "en": "Free memory percentage on each instance",
+            "fr": "Pourcentage de mémoire libre sur chaque instance"
+          }
+        },
+        {
+          "id": "d",
+          "label": {
+            "en": "Number of deployed instances",
+            "fr": "Nombre d'instances déployées"
+          }
+        }
+      ],
+      "answerId": "b",
+      "explanation": {
+        "en": "CPU, memory and instance count are internal health signals — a service can look perfectly fine on all three while a downstream dependency, a lock, or a slow query makes user-facing requests hang. A request-based SLI on latency and error rate measures the actual user experience and would have flagged the hang directly.",
+        "fr": "CPU, mémoire et nombre d'instances sont des signaux de santé internes — un service peut sembler parfaitement sain sur les trois pendant qu'une dépendance en aval, un verrou ou une requête lente fait patienter l'utilisateur. Un SLI request-based sur la latence et le taux d'erreur mesure l'expérience utilisateur réelle et aurait signalé le blocage directement."
+      },
+      "difficulty": 1
+    },
+    {
+      "id": "ex-observability-sre-silent-alert",
+      "kind": "find-bug",
+      "prompt": {
+        "en": "This alerting policy was created in the console last quarter. During last night's outage nobody was paged. Find the bug.",
+        "fr": "Cette politique d'alerte a été créée dans la console le trimestre dernier. Personne n'a été pagé pendant la panne de cette nuit. Trouvez le bug."
+      },
+      "code": "displayName: \"API error rate high\"\nconditions:\n  - displayName: \"5xx rate > 5% for 5m\"\n    conditionThreshold:\n      filter: metric.type=\"run.googleapis.com/request_count\" resource.type=\"cloud_run_revision\"\n      comparison: COMPARISON_GT\n      thresholdValue: 0.05\n      duration: 300s\ncombiner: OR\nnotificationChannels: []",
+      "choices": [
+        {
+          "id": "a",
+          "label": {
+            "en": "combiner should be AND, not OR",
+            "fr": "combiner devrait être AND, pas OR"
+          }
+        },
+        {
+          "id": "b",
+          "label": {
+            "en": "notificationChannels is empty, so the policy fires but nothing routes the incident to a human",
+            "fr": "notificationChannels est vide, donc la politique se déclenche mais rien ne route l'incident vers un humain"
+          }
+        },
+        {
+          "id": "c",
+          "label": {
+            "en": "duration should be in minutes, not seconds",
+            "fr": "duration devrait être en minutes, pas en secondes"
+          }
+        },
+        {
+          "id": "d",
+          "label": {
+            "en": "thresholdValue must be an absolute count, not a ratio",
+            "fr": "thresholdValue doit être un compte absolu, pas un ratio"
+          }
+        }
+      ],
+      "answerId": "b",
+      "explanation": {
+        "en": "The condition itself is fine — the policy will open an incident when the threshold is breached. But with an empty notificationChannels list, that incident is logged silently: no email, no Slack, no page. This is the single most common console-built-policy mistake; treating alerting policies as Terraform code with a mandatory channel field in review would have caught it before it shipped.",
+        "fr": "La condition en elle-même est correcte — la politique ouvrira un incident au dépassement du seuil. Mais avec une liste notificationChannels vide, cet incident est journalisé en silence : pas d'email, pas de Slack, pas de page. C'est l'erreur la plus fréquente sur une politique créée dans la console ; gérer les politiques d'alerte en Terraform avec un champ canal obligatoire en revue l'aurait attrapée avant sa mise en production."
+      },
+      "difficulty": 2
+    },
+    {
+      "id": "ex-observability-sre-exclusion-metric",
+      "kind": "predict-output",
+      "prompt": {
+        "en": "A team adds this exclusion filter to cut Cloud Logging cost. Two weeks later, their 'failed_login_attempts' log-based metric (filtered on severity=WARNING) flatlines at zero. What happened?",
+        "fr": "Une équipe ajoute ce filtre d'exclusion pour réduire le coût de Cloud Logging. Deux semaines plus tard, leur métrique basée sur les logs « failed_login_attempts » (filtrée sur severity=WARNING) s'aplatit à zéro. Que s'est-il passé ?"
+      },
+      "code": "gcloud logging sinks update _Default \\\n  --add-exclusion=name=drop-warnings,filter='severity<=WARNING'",
+      "choices": [
+        {
+          "id": "a",
+          "label": {
+            "en": "The metric is unaffected; exclusions only apply to sinks, not log-based metrics",
+            "fr": "La métrique n'est pas affectée ; les exclusions ne s'appliquent qu'aux sinks, pas aux métriques basées sur les logs"
+          }
+        },
+        {
+          "id": "b",
+          "label": {
+            "en": "The exclusion filter discards WARNING-and-below entries before they reach storage, so the log-based metric — which reads from stored logs — has nothing left to match",
+            "fr": "Le filtre d'exclusion jette les entrées WARNING et en dessous avant le stockage, donc la métrique basée sur les logs — qui lit les logs stockés — n'a plus rien à matcher"
+          }
+        },
+        {
+          "id": "c",
+          "label": {
+            "en": "Log-based metrics are recomputed monthly and are just due for a refresh",
+            "fr": "Les métriques basées sur les logs sont recalculées mensuellement et ont juste besoin d'un rafraîchissement"
+          }
+        },
+        {
+          "id": "d",
+          "label": {
+            "en": "The metric flatlines because the sink's storage quota was exceeded",
+            "fr": "La métrique s'aplatit car le quota de stockage du sink a été dépassé"
+          }
+        }
+      ],
+      "answerId": "b",
+      "explanation": {
+        "en": "Exclusion filters act at ingestion time on the _Default sink and drop matching entries before they're stored — and log-based metrics query stored logs, so anything excluded becomes invisible to them too, no matter how the metric's own filter is written. severity<=WARNING excludes WARNING and everything below it (NOTICE, INFO, DEBUG), which is exactly the failed-login entries. The fix is to scope the exclusion to what's truly disposable (e.g. DEBUG only) or route WARNING logs to a cheaper sink instead of dropping them.",
+        "fr": "Les filtres d'exclusion agissent à l'ingestion sur le sink _Default et jettent les entrées correspondantes avant leur stockage — et les métriques basées sur les logs interrogent les logs stockés, donc tout ce qui est exclu leur devient invisible aussi, quel que soit le filtre propre de la métrique. severity<=WARNING exclut WARNING et tout en dessous (NOTICE, INFO, DEBUG), ce qui correspond exactement aux entrées d'échec de connexion. Le correctif est de restreindre l'exclusion à ce qui est vraiment jetable (DEBUG seul, par exemple) ou de router les logs WARNING vers un sink moins cher plutôt que de les jeter."
+      },
+      "difficulty": 2
+    },
+    {
+      "id": "ex-observability-sre-burn-rate-choice",
+      "kind": "mcq",
+      "prompt": {
+        "en": "A 30-day SLO of 99.9% availability has an error budget of about 43 minutes. Current error rate would exhaust the entire monthly budget in about 2 hours if sustained. What should happen?",
+        "fr": "Un SLO de 99,9 % de disponibilité sur 30 jours a un budget d'erreur d'environ 43 minutes. Le taux d'erreur actuel épuiserait tout le budget mensuel en environ 2 heures s'il se maintenait. Que doit-il se passer ?"
+      },
+      "choices": [
+        {
+          "id": "a",
+          "label": {
+            "en": "Open a low-priority ticket for next sprint planning",
+            "fr": "Ouvrir un ticket basse priorité pour le prochain sprint"
+          }
+        },
+        {
+          "id": "b",
+          "label": {
+            "en": "Page on-call immediately: this is a fast-burn condition",
+            "fr": "Pager l'astreinte immédiatement : c'est une condition de combustion rapide"
+          }
+        },
+        {
+          "id": "c",
+          "label": {
+            "en": "Wait until the SLO is actually breached before doing anything",
+            "fr": "Attendre que le SLO soit réellement violé avant d'agir"
+          }
+        },
+        {
+          "id": "d",
+          "label": {
+            "en": "Silently log it since 2 hours is within the monthly budget",
+            "fr": "Le journaliser en silence puisque 2 heures rentrent dans le budget mensuel"
+          }
+        }
+      ],
+      "answerId": "b",
+      "explanation": {
+        "en": "Burning a month's budget in 2 hours is a fast-burn rate — exactly what multiwindow, multi-burn-rate alerting is designed to page on immediately, before the breach actually happens. Waiting for the SLO to be formally violated (option c) means acting only after the damage is done; a low-priority ticket (option a) is the right response to a slow-burn condition, not a fast one that will exhaust the budget within the hour.",
+        "fr": "Brûler un budget mensuel en 2 heures est un taux de combustion rapide — exactement ce que l'alerting multi-fenêtre, multi-taux de combustion est conçu pour pager immédiatement, avant que la violation ne se produise réellement. Attendre que le SLO soit formellement violé (option c) revient à agir seulement une fois les dégâts faits ; un ticket basse priorité (option a) est la bonne réponse à une condition de combustion lente, pas à une combustion rapide qui épuisera le budget dans l'heure."
+      },
+      "difficulty": 2
+    },
+    {
+      "id": "ex-observability-sre-cardinality-bug",
+      "kind": "find-bug",
+      "prompt": {
+        "en": "Ingestion cost for custom metrics tripled after this change shipped, and during a traffic spike the metric stopped updating for new users entirely. Find the bug.",
+        "fr": "Le coût d'ingestion des métriques custom a triplé après ce changement, et lors d'un pic de trafic la métrique a cessé de se mettre à jour pour les nouveaux utilisateurs. Trouvez le bug."
+      },
+      "code": "def record_checkout_error(user, endpoint, status_code):\n    checkout_errors_counter.add(1, {\n        \"endpoint\": endpoint,\n        \"status_code\": str(status_code),\n        \"user_id\": user.id,\n        \"session_id\": user.session_id,\n    })",
+      "choices": [
+        {
+          "id": "a",
+          "label": {
+            "en": "add() should be set() for a counter metric",
+            "fr": "add() devrait être set() pour une métrique de type compteur"
+          }
+        },
+        {
+          "id": "b",
+          "label": {
+            "en": "user_id and session_id are unbounded labels: each distinct value creates a new time series, hitting the per-project descriptor limit",
+            "fr": "user_id et session_id sont des labels non bornés : chaque valeur distincte crée une nouvelle série, ce qui heurte la limite de descripteurs par projet"
+          }
+        },
+        {
+          "id": "c",
+          "label": {
+            "en": "status_code should not be a string",
+            "fr": "status_code ne devrait pas être une chaîne"
+          }
+        },
+        {
+          "id": "d",
+          "label": {
+            "en": "The counter is missing an explicit reset call between requests",
+            "fr": "Il manque un appel explicite de reset entre les requêtes"
+          }
+        }
+      ],
+      "answerId": "b",
+      "explanation": {
+        "en": "user_id and session_id are effectively unique per request, so every checkout error from a distinct user creates a brand-new time series instead of incrementing an existing one. This both multiplies billed active time series (cost) and, once the project's custom-metric-descriptor quota is hit during a spike, silently stops new series from being created — exactly matching the observed 'stops updating for new users' symptom. The fix is to drop high-cardinality identifiers from metric labels and put them in the log line or trace span instead, where they belong.",
+        "fr": "user_id et session_id sont pratiquement uniques par requête, donc chaque erreur de paiement d'un utilisateur distinct crée une toute nouvelle série temporelle au lieu d'incrémenter une série existante. Cela multiplie à la fois les séries temporelles actives facturées (coût) et, une fois le quota de descripteurs de métriques custom du projet atteint pendant un pic, empêche silencieusement la création de nouvelles séries — correspondant exactement au symptôme observé de « cesse de se mettre à jour pour les nouveaux utilisateurs ». Le correctif est de retirer les identifiants à forte cardinalité des labels de métrique et de les mettre dans la ligne de log ou le span de trace, où est leur place."
+      },
+      "difficulty": 3
+    },
+    {
+      "id": "ex-observability-sre-trace-or-profiler",
+      "kind": "mcq",
+      "prompt": {
+        "en": "A trace shows a span spending 600ms inside a function that iterates over a large in-memory list, with no downstream calls. Which tool actually pinpoints why?",
+        "fr": "Une trace montre un span passant 600 ms dans une fonction qui itère sur une grande liste en mémoire, sans appel en aval. Quel outil identifie réellement pourquoi ?"
+      },
+      "choices": [
+        {
+          "id": "a",
+          "label": {
+            "en": "Cloud Trace alone, by reading the span duration more carefully",
+            "fr": "Cloud Trace seul, en lisant la durée du span plus attentivement"
+          }
+        },
+        {
+          "id": "b",
+          "label": {
+            "en": "Cloud Profiler, to see which line/function is consuming CPU or allocating memory",
+            "fr": "Cloud Profiler, pour voir quelle ligne/fonction consomme du CPU ou alloue de la mémoire"
+          }
+        },
+        {
+          "id": "c",
+          "label": {
+            "en": "An uptime check, since it also measures latency",
+            "fr": "Un uptime check, puisqu'il mesure aussi la latence"
+          }
+        },
+        {
+          "id": "d",
+          "label": {
+            "en": "A log-based metric on request duration",
+            "fr": "Une métrique basée sur les logs sur la durée de requête"
+          }
+        }
+      ],
+      "answerId": "b",
+      "explanation": {
+        "en": "Trace tells you which span is slow, not why — it has no visibility into what the code is doing inside that span. With no downstream network calls involved, the time is being spent on CPU work or memory pressure inside the process itself, which is exactly Profiler's job: continuous low-overhead sampling that points at the specific function or allocation site. Uptime checks and log-based duration metrics only ever restate that something is slow, at a coarser grain than Trace already provides.",
+        "fr": "Trace vous dit quel span est lent, pas pourquoi — il n'a aucune visibilité sur ce que le code fait dans ce span. Sans appel réseau en aval impliqué, le temps est passé en travail CPU ou en pression mémoire dans le processus lui-même, exactement le métier de Profiler : un échantillonnage continu à faible coût qui pointe vers la fonction ou le site d'allocation précis. Les uptime checks et les métriques de durée basées sur les logs ne font que reformuler que quelque chose est lent, à un grain plus grossier que ce que Trace fournit déjà."
+      },
+      "difficulty": 1
+    },
+    {
+      "id": "ex-observability-sre-uptime-console-gap",
+      "kind": "predict-output",
+      "prompt": {
+        "en": "This uptime check is created against an internal Cloud Run service that only accepts traffic from inside the VPC (ingress = internal). What happens when the check runs?",
+        "fr": "Cet uptime check est créé contre un service Cloud Run interne qui n'accepte le trafic que depuis l'intérieur du VPC (ingress = internal). Que se passe-t-il quand le check s'exécute ?"
+      },
+      "code": "gcloud monitoring uptime create internal-api-check \\\n  --resource-type=uptime-url \\\n  --hostname=internal-api-xyz.a.run.app \\\n  --path=/healthz \\\n  --protocol=https",
+      "choices": [
+        {
+          "id": "a",
+          "label": {
+            "en": "It succeeds normally, since Cloud Monitoring runs inside the same VPC by default",
+            "fr": "Il réussit normalement, Cloud Monitoring tournant par défaut dans le même VPC"
+          }
+        },
+        {
+          "id": "b",
+          "label": {
+            "en": "It fails from every checker location: a standard uptime check probes from external points of presence, which the internal-only service rejects",
+            "fr": "Il échoue depuis chaque emplacement de sonde : un uptime check standard sonde depuis des points de présence externes, que le service interne refuse"
+          }
+        },
+        {
+          "id": "c",
+          "label": {
+            "en": "It is automatically converted to a private uptime check",
+            "fr": "Il est automatiquement converti en uptime check privé"
+          }
+        },
+        {
+          "id": "d",
+          "label": {
+            "en": "It succeeds but only from the europe-west1 checker",
+            "fr": "Il réussit mais seulement depuis la sonde europe-west1"
+          }
+        }
+      ],
+      "answerId": "b",
+      "explanation": {
+        "en": "Standard uptime checks run from Google's external global points of presence, not from inside the customer's VPC. An internal-ingress Cloud Run service will reject that traffic, so every checker location reports the endpoint down, even though the service is healthy for its actual internal callers. Reaching the service at all requires a private uptime check configured against a VPC connector — the tooling does not auto-detect and convert this for you.",
+        "fr": "Les uptime checks standards s'exécutent depuis les points de présence externes mondiaux de Google, pas depuis l'intérieur du VPC du client. Un service Cloud Run à ingress interne refusera ce trafic, donc chaque emplacement de sonde signale l'endpoint down, alors même que le service est sain pour ses appelants internes réels. Pour atteindre le service, il faut un uptime check privé configuré via un connecteur VPC — l'outillage ne détecte ni ne convertit cela automatiquement."
+      },
+      "difficulty": 2
+    },
+    {
+      "id": "ex-observability-sre-postmortem-focus",
+      "kind": "mcq",
+      "prompt": {
+        "en": "During a blameless postmortem, an engineer says 'this wouldn't have happened if Sarah had checked the runbook before restarting the pod.' What's the better framing to write into the postmortem?",
+        "fr": "Pendant un postmortem blameless, un ingénieur dit « ça ne serait pas arrivé si Sarah avait vérifié le runbook avant de redémarrer le pod ». Quelle est la meilleure formulation à écrire dans le postmortem ?"
+      },
+      "choices": [
+        {
+          "id": "a",
+          "label": {
+            "en": "Keep it as written; it accurately names the cause",
+            "fr": "Le garder tel quel ; ça nomme précisément la cause"
+          }
+        },
+        {
+          "id": "b",
+          "label": {
+            "en": "Reframe it as a systemic gap: the runbook wasn't linked from the paging alert, or its restart guidance was unclear or missing",
+            "fr": "Le reformuler comme un manque systémique : le runbook n'était pas lié depuis l'alerte de page, ou ses instructions de redémarrage étaient floues ou absentes"
+          }
+        },
+        {
+          "id": "c",
+          "label": {
+            "en": "Omit the incident from the postmortem entirely to avoid conflict",
+            "fr": "Omettre l'incident du postmortem pour éviter le conflit"
+          }
+        },
+        {
+          "id": "d",
+          "label": {
+            "en": "Add a formal warning to Sarah's file",
+            "fr": "Ajouter un avertissement formel au dossier de Sarah"
+          }
+        }
+      ],
+      "answerId": "b",
+      "explanation": {
+        "en": "Blameless postmortems reconstruct the timeline and name systemic gaps — missing alerts, unclear or absent runbook guidance, absent SLOs — rather than the person who happened to be on call when the gap was exposed. Naming an individual (a or d) discourages future engineers from being honest about what happened during their own incidents, and omitting the incident (c) throws away the only value a postmortem produces: action items that close the gap for next time.",
+        "fr": "Les postmortems blameless reconstituent la chronologie et nomment les manques systémiques — alertes manquantes, instructions de runbook floues ou absentes, SLO absents — plutôt que la personne qui était d'astreinte quand le manque s'est révélé. Nommer un individu (a ou d) décourage les futurs ingénieurs d'être honnêtes sur ce qui s'est passé pendant leurs propres incidents, et omettre l'incident (c) jette la seule valeur que produit un postmortem : des actions qui ferment le manque pour la prochaine fois."
+      },
+      "difficulty": 2
+    }
+  ]
+}

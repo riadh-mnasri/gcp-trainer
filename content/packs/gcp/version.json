@@ -10,6 +10,11 @@
       "version": "2026-07",
       "date": "2026-07-19",
       "note": "Storage, databases, networking and IAM & security modules added: 6 modules available, 6 planned."
+    },
+    {
+      "version": "2026-07",
+      "date": "2026-07-20",
+      "note": "Data & analytics, messaging & eventing, observability & SRE, DevOps & IaC and ML & AI modules added: 11 modules available, 1 planned."
     }
   ]
 }

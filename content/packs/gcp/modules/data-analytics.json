@@ -1,0 +1,755 @@
+{
+  "id": "data-analytics",
+  "title": { "en": "Data & analytics", "fr": "Data & analytique" },
+  "tagline": {
+    "en": "BigQuery, Dataflow, Dataproc, Composer",
+    "fr": "BigQuery, Dataflow, Dataproc, Composer"
+  },
+  "icon": "📊",
+  "lessons": [
+    {
+      "id": "data-analytics-bigquery-fundamentals",
+      "title": {
+        "en": "BigQuery fundamentals: storage, compute, pricing",
+        "fr": "BigQuery fondamentaux : stockage, calcul, tarification"
+      },
+      "minutes": 5,
+      "blocks": [
+        {
+          "type": "text",
+          "body": {
+            "en": "BigQuery is a serverless data warehouse: storage (columnar, compressed, replicated) and compute (the query engine, Dremel-derived) scale and bill independently. You never provision a cluster or a node count; you load or stream data and BigQuery figures out how many slots (virtual CPUs for SQL execution) a query needs. This separation is why storage cost is flat and predictable while compute cost varies wildly with query patterns.",
+            "fr": "BigQuery est un entrepôt de données serverless : le stockage (columnaire, compressé, répliqué) et le calcul (le moteur de requêtes, dérivé de Dremel) s'échelonnent et se facturent indépendamment. On ne provisionne jamais de cluster ni de nombre de nœuds ; on charge ou on stream des données, et BigQuery détermine seul combien de slots (des vCPU virtuels pour l'exécution SQL) une requête nécessite. Cette séparation explique pourquoi le coût de stockage est plat et prévisible alors que le coût de calcul varie fortement selon les schémas de requêtage."
+          }
+        },
+        {
+          "type": "text",
+          "body": {
+            "en": "Two pricing models answer two different risk profiles. On-demand bills per TB scanned (first tier free monthly, then a fixed rate) — simple, but a runaway analyst query can spike a bill in minutes. Capacity pricing (slot commitments, now sold as editions: Standard, Enterprise, Enterprise Plus) reserves a fixed pool of slots for flat, predictable cost regardless of query volume. Interview signal: high, spiky ad hoc usage favors on-demand; steady, high-volume production workloads favor committed slots, often with autoscaling reservations to absorb bursts without over-committing.",
+            "fr": "Deux modèles tarifaires répondent à deux profils de risque différents. Le on-demand facture au To scanné (un premier palier gratuit par mois, puis un tarif fixe) — simple, mais une requête d'analyste mal maîtrisée peut faire flamber la facture en quelques minutes. La tarification à la capacité (engagements de slots, vendus aujourd'hui sous forme d'éditions : Standard, Enterprise, Enterprise Plus) réserve un pool fixe de slots pour un coût plat et prévisible, quel que soit le volume de requêtes. Signal d'entretien : un usage ad hoc élevé et erratique favorise le on-demand ; une charge de production stable et volumineuse favorise des slots engagés, souvent avec des réservations autoscalées pour absorber les pics sans surengager."
+          }
+        },
+        {
+          "type": "code",
+          "code": "CREATE TABLE analytics.events\nPARTITION BY DATE(event_ts)\nCLUSTER BY user_id, event_type AS\nSELECT * FROM staging.raw_events;\n\n-- Prunes to a single day's partitions, then to matching clusters\nSELECT user_id, COUNT(*) AS n\nFROM analytics.events\nWHERE DATE(event_ts) = '2026-07-15'\n  AND event_type = 'purchase'\nGROUP BY user_id;",
+          "caption": {
+            "en": "Partitioning skips whole days; clustering then narrows scans within a partition.",
+            "fr": "Le partitionnement saute des journées entières ; le clustering réduit ensuite le scan au sein d'une partition."
+          }
+        },
+        {
+          "type": "gotcha",
+          "body": {
+            "en": "Partitioning only helps when the query filters on the partitioning column with a resolvable constant or bound — `WHERE DATE(event_ts) = CURRENT_DATE()` prunes fine, but wrapping the column in an incompatible function, or filtering on a derived table, can force a full scan silently. On-demand bills for bytes scanned whether or not a `LIMIT` is applied, and a stray `SELECT *` on a wide table is the single most common \"why is our bill huge\" incident in real projects.",
+            "fr": "Le partitionnement n'aide que si la requête filtre sur la colonne de partitionnement avec une constante ou une borne résolvable — `WHERE DATE(event_ts) = CURRENT_DATE()` élague bien, mais envelopper la colonne dans une fonction incompatible, ou filtrer sur une table dérivée, peut forcer un scan complet en silence. Le on-demand facture les octets scannés, `LIMIT` ou pas, et un `SELECT *` égaré sur une table large est en pratique l'incident « pourquoi la facture explose » le plus fréquent."
+          }
+        },
+        {
+          "type": "tip",
+          "body": {
+            "en": "Batch loads (from GCS, via `bq load` or a load job) are free and near-instant for typical file sizes; streaming inserts (the `insertAll`/Storage Write API path) cost money per row but land data in seconds, which real-time dashboards need. Default to batch unless a genuine latency requirement justifies streaming — many teams pay streaming prices for data nobody reads for hours.",
+            "fr": "Les chargements batch (depuis GCS, via `bq load` ou un load job) sont gratuits et quasi instantanés pour des fichiers de taille courante ; les insertions en streaming (via `insertAll` ou la Storage Write API) coûtent par ligne mais rendent la donnée disponible en quelques secondes, ce qu'exigent les tableaux de bord temps réel. Par défaut, préférez le batch, sauf exigence de latence réelle justifiant le streaming — beaucoup d'équipes paient le prix du streaming pour des données que personne ne lit avant plusieurs heures."
+          }
+        }
+      ]
+    },
+    {
+      "id": "data-analytics-bigquery-advanced",
+      "title": {
+        "en": "BigQuery advanced: sharing, acceleration, cost governance",
+        "fr": "BigQuery avancé : partage, accélération, gouvernance des coûts"
+      },
+      "minutes": 5,
+      "blocks": [
+        {
+          "type": "text",
+          "body": {
+            "en": "Authorized views let a dataset expose a query result without granting access to the underlying tables: the view runs with the permissions of its own dataset, not the caller's, so an analyst can `SELECT` from a curated view while having zero rights on raw PII tables. Row-level and column-level security push finer control into the table itself: row access policies filter rows per principal, and column-level security via policy tags (Data Catalog taxonomies) masks or blocks specific columns for readers without the matching policy tag role, independent of any view.",
+            "fr": "Les vues autorisées permettent à un dataset d'exposer un résultat de requête sans donner accès aux tables sous-jacentes : la vue s'exécute avec les permissions de son propre dataset, pas celles de l'appelant, si bien qu'un analyste peut faire un `SELECT` sur une vue préparée tout en n'ayant aucun droit sur les tables brutes contenant des PII. La sécurité au niveau ligne et colonne pousse un contrôle plus fin dans la table elle-même : les row access policies filtrent les lignes par principal, et la sécurité colonne via des policy tags (taxonomies Data Catalog) masque ou bloque des colonnes précises pour les lecteurs sans le rôle correspondant, indépendamment de toute vue."
+          }
+        },
+        {
+          "type": "text",
+          "body": {
+            "en": "BI Engine is an in-memory acceleration layer (a reservation of RAM, sized in GB) that speeds up interactive dashboard queries (Looker Studio, Looker, any BI tool over the BigQuery API) without touching SQL. Materialized views precompute and incrementally refresh an aggregation, transparently rewriting matching queries to read the cheaper precomputed result — great for dashboards hitting the same rollup repeatedly. Federated (external) tables query data living in GCS, Cloud SQL, Spanner or Bigtable in place, trading query speed and lack of clustering/partitioning support for zero duplication and always-fresh source data.",
+            "fr": "BI Engine est une couche d'accélération en mémoire (une réservation de RAM, dimensionnée en Go) qui accélère les requêtes interactives de tableaux de bord (Looker Studio, Looker, tout outil BI passant par l'API BigQuery) sans toucher au SQL. Les vues matérialisées précalculent et rafraîchissent incrémentalement une agrégation, en réécrivant de façon transparente les requêtes correspondantes pour lire ce résultat précalculé moins coûteux — idéal pour des tableaux de bord qui martèlent le même rollup. Les tables fédérées (externes) interrogent des données restées dans GCS, Cloud SQL, Spanner ou Bigtable, échangeant vitesse de requête et absence de clustering/partitionnement contre zéro duplication et une donnée source toujours à jour."
+          }
+        },
+        {
+          "type": "code",
+          "code": "-- Dry run: estimates bytes scanned and cost without executing\nbq query --dry_run --use_legacy_sql=false \\\n  'SELECT * FROM analytics.events WHERE event_type = \"purchase\"'\n\n-- Cost audit: top 10 most expensive queries this week\nSELECT user_email, query,\n       total_bytes_billed / POW(10, 12) AS tb_billed\nFROM `region-eu`.INFORMATION_SCHEMA.JOBS_BY_PROJECT\nWHERE creation_time > TIMESTAMP_SUB(CURRENT_TIMESTAMP(), INTERVAL 7 DAY)\nORDER BY total_bytes_billed DESC\nLIMIT 10;",
+          "caption": {
+            "en": "Dry runs catch expensive queries before execution; INFORMATION_SCHEMA finds the ones that already ran.",
+            "fr": "Le dry run intercepte les requêtes coûteuses avant exécution ; INFORMATION_SCHEMA retrouve celles déjà exécutées."
+          }
+        },
+        {
+          "type": "gotcha",
+          "body": {
+            "en": "Materialized views only rewrite queries that match their precomputed aggregation closely enough (same grouping, compatible filters); a slightly different query silently falls back to scanning the base table, and teams sometimes believe they are \"covered\" when they are not. On the security side, an authorized view forgets nothing on its own: if the view's dataset and the source dataset live in different regions, or the view definition changes without re-authorizing, access breaks in ways that look like a permissions bug but are actually a routing/authorization mismatch.",
+            "fr": "Les vues matérialisées ne réécrivent une requête que si elle correspond suffisamment à leur agrégation précalculée (même groupement, filtres compatibles) ; une requête légèrement différente retombe silencieusement sur un scan de la table de base, et certaines équipes se croient « couvertes » alors qu'elles ne le sont pas. Côté sécurité, une vue autorisée n'oublie rien d'elle-même : si le dataset de la vue et le dataset source vivent dans des régions différentes, ou si la définition de la vue change sans réautorisation, l'accès casse d'une manière qui ressemble à un bug de permissions mais qui est en réalité un désalignement de routage/autorisation."
+          }
+        },
+        {
+          "type": "tip",
+          "body": {
+            "en": "Cost governance in production means layering three controls: a mandatory dry-run or query validator in CI/BI tooling to catch obviously expensive SQL before it runs, custom quotas (per-user or per-project daily bytes-billed caps) as a hard backstop, and a scheduled INFORMATION_SCHEMA audit surfacing top spenders and scan-heavy tables so partitioning/clustering gaps get found before Finance does.",
+            "fr": "La gouvernance des coûts en production, c'est trois contrôles superposés : un dry-run ou un validateur de requêtes obligatoire dans l'outillage CI/BI pour intercepter du SQL manifestement coûteux avant exécution, des quotas personnalisés (plafonds d'octets facturés par jour, par utilisateur ou par projet) comme filet de sécurité dur, et un audit INFORMATION_SCHEMA planifié qui fait remonter les plus gros consommateurs et les tables scannées à outrance, pour détecter les lacunes de partitionnement/clustering avant que la Finance ne les découvre."
+          }
+        }
+      ]
+    },
+    {
+      "id": "data-analytics-dataflow",
+      "title": {
+        "en": "Dataflow: Apache Beam, autoscaling, windowing",
+        "fr": "Dataflow : Apache Beam, autoscaling, fenêtrage"
+      },
+      "minutes": 5,
+      "blocks": [
+        {
+          "type": "text",
+          "body": {
+            "en": "Dataflow is Google's managed runner for Apache Beam, a unified programming model where the same pipeline code runs against bounded (batch) or unbounded (streaming) data — you write transforms over `PCollection`s (`ParDo`, `GroupByKey`, `Combine`) and Beam's execution model handles the rest. This matters operationally: a team can prototype and test transform logic in batch mode against a fixed dataset, then point the same pipeline at a Pub/Sub topic for production streaming, with no rewrite of business logic.",
+            "fr": "Dataflow est le runner managé de Google pour Apache Beam, un modèle de programmation unifié où le même code de pipeline s'exécute sur des données bornées (batch) ou non bornées (streaming) — on écrit des transformations sur des `PCollection` (`ParDo`, `GroupByKey`, `Combine`) et le modèle d'exécution de Beam gère le reste. C'est important opérationnellement : une équipe peut prototyper et tester la logique de transformation en mode batch sur un jeu de données fixe, puis pointer le même pipeline vers un topic Pub/Sub pour du streaming en production, sans réécrire la logique métier."
+          }
+        },
+        {
+          "type": "text",
+          "body": {
+            "en": "Dataflow autoscales workers up and down based on backlog and CPU utilization — no cluster sizing decisions, unlike Dataproc. For streaming, three concepts govern correctness under out-of-order data: windowing groups unbounded data into finite chunks (fixed, sliding, or session windows) for aggregation; the watermark is Beam's estimate of how complete the data is up to a given event time; triggers decide when to emit results for a window (on watermark pass, periodically, or on late-data arrival), trading result completeness against latency.",
+            "fr": "Dataflow autoscale les workers à la hausse et à la baisse selon le backlog et l'utilisation CPU — aucune décision de dimensionnement de cluster, contrairement à Dataproc. En streaming, trois concepts gouvernent la correction face aux données désordonnées : le fenêtrage regroupe les données non bornées en tranches finies (fenêtres fixes, glissantes ou de session) pour l'agrégation ; le watermark est l'estimation par Beam du degré de complétude des données jusqu'à un instant événement donné ; les triggers décident quand émettre le résultat d'une fenêtre (au passage du watermark, périodiquement, ou à l'arrivée de données tardives), en arbitrant complétude du résultat contre latence."
+          }
+        },
+        {
+          "type": "code",
+          "code": "(pipeline\n  | 'ReadPubSub' >> beam.io.ReadFromPubSub(topic=input_topic)\n  | 'Window' >> beam.WindowInto(\n        beam.window.FixedWindows(60),\n        trigger=beam.trigger.AfterWatermark(\n            early=beam.trigger.AfterProcessingTime(30),\n            late=beam.trigger.AfterCount(1)),\n        accumulation_mode=beam.trigger.AccumulationMode.ACCUMULATING,\n        allowed_lateness=300)\n  | 'CountPerKey' >> beam.combiners.Count.PerKey()\n  | 'WriteBQ' >> beam.io.WriteToBigQuery(output_table))",
+          "caption": {
+            "en": "A 60s window with an early speculative trigger and a 5-minute grace period for late data.",
+            "fr": "Une fenêtre de 60 s avec un trigger spéculatif précoce et une tolérance de 5 minutes pour la donnée tardive."
+          }
+        },
+        {
+          "type": "gotcha",
+          "body": {
+            "en": "Data arriving after `allowed_lateness` has elapsed for its window is dropped, not queued — a slow mobile client or a delayed upstream batch can silently lose events from an aggregate with no error anywhere. Streaming jobs also never scale to zero: an idle streaming pipeline still holds workers and billing runs continuously, which is the single most common Dataflow cost surprise — teams forget to drain/cancel a job after a migration or a test.",
+            "fr": "Une donnée arrivant après l'expiration de `allowed_lateness` pour sa fenêtre est abandonnée, pas mise en attente — un client mobile lent ou un batch amont retardé peut faire perdre silencieusement des événements d'un agrégat, sans la moindre erreur visible. Les jobs streaming ne redescendent par ailleurs jamais à zéro : un pipeline streaming inactif conserve ses workers et continue de facturer en continu, ce qui est la mauvaise surprise de coût Dataflow la plus fréquente — des équipes oublient de drainer/annuler un job après une migration ou un test."
+          }
+        },
+        {
+          "type": "tip",
+          "body": {
+            "en": "Flex Templates package a pipeline (code + dependencies) into a container image with metadata describing its runtime parameters, so a pipeline becomes a reusable, versioned artifact that non-engineers (or a Composer DAG, or a Cloud Function) can launch with just parameter values — no Python/Java environment needed at launch time. This is the standard way to hand a validated pipeline to an ops team or wire it into a scheduled orchestration.",
+            "fr": "Les Flex Templates empaquettent un pipeline (code + dépendances) dans une image de conteneur avec des métadonnées décrivant ses paramètres d'exécution, si bien qu'un pipeline devient un artefact réutilisable et versionné qu'un non-ingénieur (ou un DAG Composer, ou une Cloud Function) peut lancer avec de simples valeurs de paramètres — aucun environnement Python/Java requis au lancement. C'est la manière standard de remettre un pipeline validé à une équipe ops ou de le brancher dans une orchestration planifiée."
+          }
+        }
+      ]
+    },
+    {
+      "id": "data-analytics-dataproc",
+      "title": {
+        "en": "Dataproc: managed Spark and Hadoop",
+        "fr": "Dataproc : Spark et Hadoop managés"
+      },
+      "minutes": 5,
+      "blocks": [
+        {
+          "type": "text",
+          "body": {
+            "en": "Dataproc runs standard open-source Hadoop/Spark/Hive/Presto on managed clusters: a master node plus worker nodes, provisioned in roughly 90 seconds, running the exact OSS binaries and configs your team already knows — existing Spark jobs, Hive queries, or Jupyter notebooks port over with minimal change. The defining operational choice is ephemeral vs long-running: ephemeral clusters are created for a single job (or a scheduled batch window) and deleted immediately after, paying for compute only while work runs; long-running clusters stay up for interactive or ad hoc use at the cost of paying for idle time.",
+            "fr": "Dataproc exécute du Hadoop/Spark/Hive/Presto open source standard sur des clusters managés : un nœud maître plus des workers, provisionnés en environ 90 secondes, faisant tourner exactement les binaires et configurations OSS que l'équipe connaît déjà — jobs Spark existants, requêtes Hive ou notebooks Jupyter migrent avec un minimum de changements. Le choix opérationnel structurant est éphémère vs longue durée : les clusters éphémères sont créés pour un seul job (ou une fenêtre batch planifiée) et détruits immédiatement après, ne payant le calcul que pendant l'exécution ; les clusters longue durée restent actifs pour un usage interactif ou ad hoc, au prix de payer le temps d'inactivité."
+          }
+        },
+        {
+          "type": "text",
+          "body": {
+            "en": "Autoscaling policies (attached to a cluster, defining min/max worker counts and scale factors based on YARN pending memory) handle variable-shaped jobs without manual resizing. Choose Dataproc over Dataflow or BigQuery when there is real existing investment in Spark/Hive code, custom JVM libraries, or a specific cluster topology (GPU nodes, particular Spark versions, third-party connectors) that a fully managed serverless model cannot accommodate — porting a mature, tuned Spark codebase to Beam is rarely worth it just to \"go serverless\".",
+            "fr": "Les politiques d'autoscaling (attachées à un cluster, définissant des bornes min/max de workers et des facteurs d'échelle basés sur la mémoire YARN en attente) absorbent des jobs de forme variable sans redimensionnement manuel. Préférez Dataproc à Dataflow ou BigQuery quand il existe un investissement réel en code Spark/Hive, des bibliothèques JVM sur mesure, ou une topologie de cluster spécifique (nœuds GPU, versions Spark précises, connecteurs tiers) qu'un modèle serverless entièrement managé ne peut pas accueillir — porter un codebase Spark mature et réglé vers Beam vaut rarement le coup juste pour « passer au serverless »."
+          }
+        },
+        {
+          "type": "code",
+          "code": "# Ephemeral pattern: create, submit, delete — pay only for the run\ngcloud dataproc clusters create tmp-etl \\\n  --region=europe-west1 \\\n  --enable-autoscaling \\\n  --autoscaling-policy=etl-policy \\\n  --num-workers=2 --max-workers=10\n\ngcloud dataproc jobs submit spark \\\n  --cluster=tmp-etl --region=europe-west1 \\\n  --class=com.acme.EtlJob --jars=gs://my-app/etl.jar\n\ngcloud dataproc clusters delete tmp-etl --region=europe-west1 --quiet",
+          "caption": {
+            "en": "Ephemeral clusters turn Dataproc into effectively serverless batch: no idle billing.",
+            "fr": "Les clusters éphémères font de Dataproc du batch quasi serverless : aucune facturation à l'arrêt."
+          }
+        },
+        {
+          "type": "gotcha",
+          "body": {
+            "en": "Writing job output to the cluster's local HDFS instead of GCS (via the GCS connector, `gs://` paths) is fatal for ephemeral clusters: deleting the cluster deletes HDFS, and the output silently disappears with it. Always point Spark/Hive I/O at GCS so data outlives the cluster — this is the Dataproc equivalent of the Compute Engine \"we stopped the VM and lost local SSD data\" trap.",
+            "fr": "Écrire la sortie d'un job sur le HDFS local du cluster plutôt que sur GCS (via le connecteur GCS, chemins `gs://`) est fatal pour les clusters éphémères : détruire le cluster détruit le HDFS, et la sortie disparaît silencieusement avec lui. Pointez toujours les I/O Spark/Hive vers GCS pour que la donnée survive au cluster — c'est l'équivalent Dataproc du piège Compute Engine « on a arrêté la VM et perdu les données du local SSD »."
+          }
+        },
+        {
+          "type": "tip",
+          "body": {
+            "en": "Dataproc Serverless for Spark removes even cluster lifecycle management: submit a Spark batch workload directly, Google provisions and tears down the infrastructure per job, and autoscaling is implicit. It sits between classic Dataproc (full control, cluster to manage) and Dataflow (different programming model): pick it when you want zero cluster ops but still need real Spark, not a Beam rewrite.",
+            "fr": "Dataproc Serverless for Spark supprime même la gestion du cycle de vie du cluster : on soumet directement une charge Spark batch, Google provisionne et démonte l'infrastructure par job, et l'autoscaling est implicite. Il se situe entre le Dataproc classique (contrôle total, cluster à gérer) et Dataflow (modèle de programmation différent) : choisissez-le pour zéro opération de cluster tout en gardant du vrai Spark, sans réécriture vers Beam."
+          }
+        }
+      ]
+    },
+    {
+      "id": "data-analytics-orchestration",
+      "title": {
+        "en": "Orchestration and choosing the right tool",
+        "fr": "Orchestration et choisir le bon outil"
+      },
+      "minutes": 6,
+      "blocks": [
+        {
+          "type": "text",
+          "body": {
+            "en": "Cloud Composer is managed Apache Airflow: it orchestrates dependencies and schedules across services that don't natively talk to each other — trigger a Dataproc job, wait for it, then load results into BigQuery, then kick a Dataflow pipeline, then notify Slack, all as one DAG with retries, backfills, and a visual timeline. Composer's defining trait is that the environment itself (the Airflow webserver, scheduler, workers, backing GKE cluster) is a persistent, always-on piece of infrastructure — you are not paying per DAG run, you are paying for the environment to exist.",
+            "fr": "Cloud Composer est un Apache Airflow managé : il orchestre dépendances et plannings entre services qui ne se parlent pas nativement — déclencher un job Dataproc, attendre sa fin, charger les résultats dans BigQuery, lancer un pipeline Dataflow, notifier Slack, le tout comme un seul DAG avec retries, backfills et une timeline visuelle. Le trait structurant de Composer : l'environnement lui-même (webserver Airflow, scheduler, workers, cluster GKE sous-jacent) est une infrastructure persistante et toujours active — on ne paie pas par exécution de DAG, on paie pour que l'environnement existe."
+          }
+        },
+        {
+          "type": "text",
+          "body": {
+            "en": "The interview-grade decision tree across the four services: pure SQL analytics on structured/semi-structured data, however large? BigQuery, the default. Custom transformation logic, need for a single batch-or-streaming programming model, or Google-native low-ops pipelines? Dataflow. Existing Spark/Hadoop/Hive codebase, or a need for cluster-level control (specific libraries, GPUs, exact OSS versions)? Dataproc. Multiple of the above need to run in dependency order on a schedule, with retries and cross-service glue? Composer sits on top, orchestrating the others — it replaces none of them.",
+            "fr": "L'arbre de décision niveau entretien entre les quatre services : de l'analytique SQL pur sur des données structurées/semi-structurées, quelle que soit la taille ? BigQuery, le défaut. Une logique de transformation sur mesure, le besoin d'un seul modèle de programmation batch-ou-streaming, ou des pipelines low-ops natifs Google ? Dataflow. Un codebase Spark/Hadoop/Hive existant, ou un besoin de contrôle au niveau cluster (bibliothèques spécifiques, GPU, versions OSS précises) ? Dataproc. Plusieurs des besoins ci-dessus doivent s'enchaîner dans l'ordre sur un planning, avec retries et glu inter-services ? Composer se place au-dessus, orchestrant les autres — il n'en remplace aucun."
+          }
+        },
+        {
+          "type": "code",
+          "code": "with DAG('daily_pipeline', schedule='0 3 * * *', catchup=False) as dag:\n    etl = DataprocSubmitJobOperator(task_id='spark_etl', job=spark_job, region='europe-west1')\n    load = BigQueryInsertJobOperator(task_id='load_curated', configuration=load_cfg)\n    notify = SlackWebhookOperator(task_id='notify', message='Pipeline OK')\n\n    etl >> load >> notify",
+          "caption": {
+            "en": "A minimal cross-service DAG: Dataproc feeds BigQuery, a Slack ping closes the loop.",
+            "fr": "Un DAG minimal inter-services : Dataproc alimente BigQuery, une notif Slack referme la boucle."
+          }
+        },
+        {
+          "type": "gotcha",
+          "body": {
+            "en": "Three cost traps recur across every real data-analytics estate: unpartitioned or filter-less BigQuery queries billing full-table scans on-demand; a streaming Dataflow job left running after its purpose ended, billing workers 24/7 for nothing; and a Composer environment sized and left on year-round for a handful of daily DAGs, when the same schedules could run leaner (smaller environment, or evaluate whether a simpler scheduler suffices before defaulting to Composer for everything).",
+            "fr": "Trois pièges de coût reviennent dans tout parc data-analytics réel : des requêtes BigQuery non partitionnées ou sans filtre facturant des scans complets en on-demand ; un job Dataflow streaming laissé actif après la fin de son utilité, facturant des workers 24 h/24 pour rien ; et un environnement Composer dimensionné et laissé allumé toute l'année pour une poignée de DAG quotidiens, alors que les mêmes plannings pourraient tourner plus légèrement (environnement plus petit, ou évaluer si un ordonnanceur plus simple suffit avant de dégainer Composer par défaut)."
+          }
+        },
+        {
+          "type": "tip",
+          "body": {
+            "en": "Composer 2 runs on GKE Autopilot underneath and lets environment size (workers, scheduler count) scale within bounds, which softens but does not remove the always-on cost. Before reaching for Composer, ask whether Cloud Workflows, Cloud Scheduler plus Pub/Sub, or even a single Dataflow/Dataproc job with built-in retries covers the need — Composer earns its keep at real cross-service DAG complexity, not for \"run this one job nightly\".",
+            "fr": "Composer 2 tourne sous le capot sur GKE Autopilot et permet à la taille de l'environnement (workers, nombre de schedulers) de varier dans des bornes, ce qui atténue sans supprimer le coût de l'always-on. Avant de dégainer Composer, demandez-vous si Cloud Workflows, Cloud Scheduler plus Pub/Sub, ou même un simple job Dataflow/Dataproc avec retries intégrés couvre le besoin — Composer se justifie face à une vraie complexité de DAG inter-services, pas pour « lancer ce job une fois par nuit »."
+          }
+        }
+      ]
+    }
+  ],
+  "flashcards": [
+    {
+      "id": "fc-data-analytics-storage-compute",
+      "front": {
+        "en": "BigQuery separates storage and compute. What does that buy you operationally?",
+        "fr": "BigQuery sépare stockage et calcul. Qu'est-ce que cela apporte opérationnellement ?"
+      },
+      "back": {
+        "en": "No cluster or node sizing at all: storage cost is flat regardless of query load, and compute (slots) scales per query automatically. You never provision capacity ahead of demand for storage; compute cost is governed by the pricing model you pick (on-demand or slots), not by infrastructure decisions.",
+        "fr": "Aucun dimensionnement de cluster ou de nœud : le coût de stockage est plat quelle que soit la charge de requêtes, et le calcul (slots) s'échelonne automatiquement par requête. On ne provisionne jamais de capacité de stockage par anticipation ; le coût de calcul dépend du modèle tarifaire choisi (on-demand ou slots), pas de décisions d'infrastructure."
+      }
+    },
+    {
+      "id": "fc-data-analytics-pricing-models",
+      "front": {
+        "en": "On-demand vs capacity (slot) pricing in BigQuery: how do you choose?",
+        "fr": "Tarification on-demand vs capacité (slots) sur BigQuery : comment choisir ?"
+      },
+      "back": {
+        "en": "On-demand: pay per TB scanned, simple but exposed to spiky/runaway query cost — fits ad hoc, unpredictable analytics. Capacity/slots (editions): reserve a fixed pool of compute for flat, predictable cost — fits steady, high-volume production workloads, often with autoscaling reservations for bursts.",
+        "fr": "On-demand : payer au To scanné, simple mais exposé aux coûts de requêtes erratiques — adapté à l'analytique ad hoc et imprévisible. Capacité/slots (éditions) : réserver un pool de calcul fixe pour un coût plat et prévisible — adapté aux charges de production stables et volumineuses, souvent avec des réservations autoscalées pour les pics."
+      }
+    },
+    {
+      "id": "fc-data-analytics-partition-cluster",
+      "front": {
+        "en": "Partitioning vs clustering in BigQuery: what does each do to a scan?",
+        "fr": "Partitionnement vs clustering sur BigQuery : que fait chacun sur un scan ?"
+      },
+      "back": {
+        "en": "Partitioning (typically by date) prunes whole partitions when the query filters on the partitioning column with a resolvable condition. Clustering then sorts data within each partition (or the whole table) by the clustering columns, narrowing the scan further for queries filtering/aggregating on those columns.",
+        "fr": "Le partitionnement (typiquement par date) élague des partitions entières quand la requête filtre sur la colonne de partitionnement avec une condition résolvable. Le clustering trie ensuite la donnée au sein de chaque partition (ou de la table entière) selon les colonnes de clustering, réduisant encore le scan pour les requêtes qui filtrent/agrègent dessus."
+      }
+    },
+    {
+      "id": "fc-data-analytics-streaming-vs-batch",
+      "front": {
+        "en": "Streaming inserts vs batch loads into BigQuery: cost and latency trade-off?",
+        "fr": "Insertions en streaming vs chargements batch dans BigQuery : quel compromis coût/latence ?"
+      },
+      "back": {
+        "en": "Batch loads (bq load / load jobs from GCS) are free and near-instant for typical files but not real-time. Streaming inserts land data in seconds but cost per row. Default to batch; use streaming only when a genuine low-latency requirement (live dashboards, real-time alerting) justifies the cost.",
+        "fr": "Les chargements batch (bq load / load jobs depuis GCS) sont gratuits et quasi instantanés pour des fichiers courants, mais pas temps réel. Les insertions en streaming rendent la donnée disponible en secondes mais coûtent par ligne. Préférez le batch par défaut ; réservez le streaming à une exigence réelle de faible latence (tableaux de bord live, alerting temps réel) qui en justifie le coût."
+      }
+    },
+    {
+      "id": "fc-data-analytics-authorized-views",
+      "front": {
+        "en": "What problem do authorized views solve, and how do row/column-level security differ from them?",
+        "fr": "Quel problème résolvent les vues autorisées, et en quoi la sécurité ligne/colonne en diffère-t-elle ?"
+      },
+      "back": {
+        "en": "Authorized views let a dataset expose query results (the view runs with the view dataset's permissions) without granting access to underlying tables — access control at the view boundary. Row-level security (row access policies) and column-level security (policy tags) instead control access inside the table itself, independent of any view.",
+        "fr": "Les vues autorisées permettent à un dataset d'exposer un résultat de requête (la vue s'exécute avec les permissions de son propre dataset) sans donner accès aux tables sous-jacentes — un contrôle d'accès à la frontière de la vue. La sécurité ligne (row access policies) et colonne (policy tags) contrôle, elle, l'accès à l'intérieur même de la table, indépendamment de toute vue."
+      }
+    },
+    {
+      "id": "fc-data-analytics-bi-engine",
+      "front": {
+        "en": "What is BI Engine and what does it not replace?",
+        "fr": "Qu'est-ce que BI Engine et que ne remplace-t-il pas ?"
+      },
+      "back": {
+        "en": "An in-memory acceleration reservation (sized in GB) that speeds up interactive dashboard queries over BigQuery, with no SQL changes required. It does not replace partitioning/clustering or materialized views — those reduce bytes scanned; BI Engine speeds up serving the result.",
+        "fr": "Une réservation d'accélération en mémoire (dimensionnée en Go) qui accélère les requêtes interactives de tableaux de bord sur BigQuery, sans changement de SQL. Elle ne remplace pas le partitionnement/clustering ni les vues matérialisées — ceux-ci réduisent les octets scannés ; BI Engine accélère la restitution du résultat."
+      }
+    },
+    {
+      "id": "fc-data-analytics-materialized-views",
+      "front": {
+        "en": "How do BigQuery materialized views save cost, and what is their main failure mode?",
+        "fr": "Comment les vues matérialisées BigQuery font-elles économiser des coûts, et quel est leur principal mode d'échec ?"
+      },
+      "back": {
+        "en": "They precompute and incrementally refresh an aggregation, and BigQuery transparently rewrites matching queries to read the cheaper precomputed result. Failure mode: a query that doesn't match closely enough (different grouping/filters) silently falls back to scanning the base table — no error, just no savings.",
+        "fr": "Elles précalculent et rafraîchissent incrémentalement une agrégation, et BigQuery réécrit de façon transparente les requêtes correspondantes pour lire ce résultat précalculé moins coûteux. Mode d'échec : une requête qui ne correspond pas assez précisément (groupement/filtres différents) retombe silencieusement sur un scan de la table de base — aucune erreur, juste aucune économie."
+      }
+    },
+    {
+      "id": "fc-data-analytics-cost-control",
+      "front": {
+        "en": "Name the three layers of BigQuery cost governance covered in this module.",
+        "fr": "Citez les trois couches de gouvernance des coûts BigQuery vues dans ce module."
+      },
+      "back": {
+        "en": "Dry-run / query validator in CI or BI tooling to catch expensive SQL before execution; custom quotas (per-user/per-project bytes-billed caps) as a hard backstop; scheduled INFORMATION_SCHEMA audits (JOBS_BY_PROJECT) to surface top spenders and scan-heavy tables after the fact.",
+        "fr": "Dry-run / validateur de requêtes en CI ou dans l'outillage BI pour intercepter du SQL coûteux avant exécution ; quotas personnalisés (plafonds d'octets facturés par utilisateur/projet) comme filet de sécurité dur ; audits INFORMATION_SCHEMA planifiés (JOBS_BY_PROJECT) pour faire remonter a posteriori les plus gros consommateurs et les tables trop scannées."
+      }
+    },
+    {
+      "id": "fc-data-analytics-beam-model",
+      "front": {
+        "en": "What is the core idea of Apache Beam's programming model, and why does Dataflow benefit from it?",
+        "fr": "Quelle est l'idée centrale du modèle de programmation Apache Beam, et pourquoi Dataflow en profite-t-il ?"
+      },
+      "back": {
+        "en": "Unified batch/streaming: the same pipeline code (transforms over PCollections) runs against bounded or unbounded data. Teams prototype/test in batch against a fixed dataset, then point the same pipeline at a streaming source for production — no rewrite of business logic.",
+        "fr": "Batch/streaming unifiés : le même code de pipeline (transformations sur des PCollection) s'exécute sur des données bornées ou non bornées. Les équipes prototypent/testent en batch sur un jeu fixe, puis pointent le même pipeline vers une source streaming en production — sans réécrire la logique métier."
+      }
+    },
+    {
+      "id": "fc-data-analytics-windowing-watermarks",
+      "front": {
+        "en": "Define windowing, watermark, and trigger in a Dataflow streaming pipeline.",
+        "fr": "Définissez fenêtrage, watermark et trigger dans un pipeline streaming Dataflow."
+      },
+      "back": {
+        "en": "Windowing groups unbounded data into finite chunks (fixed/sliding/session) for aggregation. The watermark is Beam's estimate of data completeness up to a given event time. Triggers decide when to emit a window's result (on watermark pass, periodically, or on late data), trading completeness against latency.",
+        "fr": "Le fenêtrage regroupe les données non bornées en tranches finies (fixes/glissantes/session) pour l'agrégation. Le watermark est l'estimation par Beam de la complétude des données jusqu'à un instant événement donné. Les triggers décident quand émettre le résultat d'une fenêtre (au passage du watermark, périodiquement, ou sur donnée tardive), arbitrant complétude contre latence."
+      }
+    },
+    {
+      "id": "fc-data-analytics-flex-templates",
+      "front": {
+        "en": "What problem do Dataflow Flex Templates solve?",
+        "fr": "Quel problème résolvent les Flex Templates Dataflow ?"
+      },
+      "back": {
+        "en": "They package a pipeline (code + dependencies) into a container image with parameter metadata, turning it into a reusable, versioned artifact launchable by parameter values alone — from Composer, a Cloud Function, or a non-engineer — with no runtime environment needed at launch.",
+        "fr": "Elles empaquettent un pipeline (code + dépendances) dans une image de conteneur avec des métadonnées de paramètres, en faisant un artefact réutilisable et versionné lançable à partir de simples valeurs de paramètres — depuis Composer, une Cloud Function, ou un non-ingénieur — sans environnement d'exécution requis au lancement."
+      }
+    },
+    {
+      "id": "fc-data-analytics-dataproc-vs-dataflow",
+      "front": {
+        "en": "When does Dataproc beat Dataflow or BigQuery for a given workload?",
+        "fr": "Quand Dataproc bat-il Dataflow ou BigQuery pour une charge donnée ?"
+      },
+      "back": {
+        "en": "When there is real existing investment in Spark/Hive/Hadoop code, custom JVM libraries, or a need for cluster-level control (GPUs, specific OSS versions, third-party connectors) that a serverless model can't accommodate. Porting a mature tuned Spark codebase to Beam just to \"go serverless\" is rarely worth it.",
+        "fr": "Quand il existe un investissement réel en code Spark/Hive/Hadoop, des bibliothèques JVM sur mesure, ou un besoin de contrôle au niveau cluster (GPU, versions OSS précises, connecteurs tiers) qu'un modèle serverless ne peut pas accueillir. Porter un codebase Spark mature et réglé vers Beam juste pour « passer au serverless » vaut rarement le coup."
+      }
+    },
+    {
+      "id": "fc-data-analytics-dataproc-ephemeral",
+      "front": {
+        "en": "Ephemeral vs long-running Dataproc clusters: cost trade-off, and the classic data-loss trap?",
+        "fr": "Clusters Dataproc éphémères vs longue durée : compromis de coût, et le piège classique de perte de données ?"
+      },
+      "back": {
+        "en": "Ephemeral: created per job, deleted right after, paying compute only while work runs — effectively serverless batch. Long-running: stays up for interactive/ad hoc use, paying for idle time. Trap: writing output to the cluster's local HDFS instead of GCS means deleting an ephemeral cluster silently destroys that output.",
+        "fr": "Éphémère : créé par job, détruit juste après, ne payant le calcul que pendant l'exécution — du batch quasi serverless. Longue durée : reste actif pour un usage interactif/ad hoc, en payant le temps d'inactivité. Piège : écrire la sortie sur le HDFS local du cluster plutôt que sur GCS fait que détruire un cluster éphémère détruit silencieusement cette sortie."
+      }
+    },
+    {
+      "id": "fc-data-analytics-composer-cost",
+      "front": {
+        "en": "What is Cloud Composer's defining cost characteristic, and what should you check before defaulting to it?",
+        "fr": "Quelle est la caractéristique de coût structurante de Cloud Composer, et que vérifier avant de le choisir par défaut ?"
+      },
+      "back": {
+        "en": "The environment (webserver, scheduler, workers, backing GKE cluster) is persistent and always-on — you pay for its existence, not per DAG run. Before reaching for Composer, check whether Cloud Workflows, Cloud Scheduler plus Pub/Sub, or a single job with built-in retries covers the need; Composer earns its keep at real cross-service DAG complexity.",
+        "fr": "L'environnement (webserver, scheduler, workers, cluster GKE sous-jacent) est persistant et toujours actif — on paie son existence, pas chaque exécution de DAG. Avant de dégainer Composer, vérifiez si Cloud Workflows, Cloud Scheduler plus Pub/Sub, ou un job unique avec retries intégrés couvre le besoin ; Composer se justifie face à une vraie complexité de DAG inter-services."
+      }
+    }
+  ],
+  "exercises": [
+    {
+      "id": "ex-data-analytics-pricing-choice",
+      "kind": "mcq",
+      "prompt": {
+        "en": "A finance team runs a steady 40 TB/day of scheduled BigQuery ETL and reporting queries, 24/7, with predictable volume. Analysts occasionally run large ad hoc explorations too. Which pricing setup fits best?",
+        "fr": "Une équipe finance exécute en continu 40 To/jour de requêtes BigQuery ETL et reporting planifiées, 24 h/24, avec un volume prévisible. Des analystes lancent aussi ponctuellement de grandes explorations ad hoc. Quelle configuration tarifaire convient le mieux ?"
+      },
+      "choices": [
+        {
+          "id": "a",
+          "label": {
+            "en": "Pure on-demand for everything, it's the simplest model",
+            "fr": "Du on-demand pur pour tout, c'est le modèle le plus simple"
+          }
+        },
+        {
+          "id": "b",
+          "label": {
+            "en": "A baseline slot commitment/reservation sized for the steady ETL load, with autoscaling reservations to absorb ad hoc bursts",
+            "fr": "Un engagement/réservation de slots de base dimensionné pour la charge ETL stable, avec des réservations autoscalées pour absorber les pics ad hoc"
+          }
+        },
+        {
+          "id": "c",
+          "label": {
+            "en": "Disable ad hoc queries entirely to keep costs flat",
+            "fr": "Désactiver totalement les requêtes ad hoc pour garder un coût plat"
+          }
+        },
+        {
+          "id": "d",
+          "label": {
+            "en": "Move the ETL to Dataflow to avoid BigQuery compute costs",
+            "fr": "Basculer l'ETL vers Dataflow pour éviter les coûts de calcul BigQuery"
+          }
+        }
+      ],
+      "answerId": "b",
+      "explanation": {
+        "en": "Steady, predictable, high-volume workloads are exactly what committed slots/editions are priced for: flat, predictable cost instead of paying per-TB for 40 TB/day. Autoscaling reservations then absorb the unpredictable analyst bursts without over-provisioning a permanent baseline. Pure on-demand exposes the steady load to unnecessary variance at that volume; banning ad hoc work sacrifices legitimate analytics; moving ETL to Dataflow doesn't address BigQuery's own query costs and adds an unrelated system.",
+        "fr": "Une charge stable, prévisible et volumineuse est exactement le cas d'usage des slots engagés/éditions : un coût plat et prévisible plutôt que payer au To pour 40 To/jour. Les réservations autoscalées absorbent ensuite les pics imprévisibles des analystes sans surprovisionner une base permanente. Le on-demand pur expose la charge stable à une variance inutile à ce volume ; interdire l'ad hoc sacrifie une analytique légitime ; déplacer l'ETL vers Dataflow ne règle pas les coûts de requêtage propres à BigQuery et ajoute un système sans rapport."
+      },
+      "difficulty": 2
+    },
+    {
+      "id": "ex-data-analytics-partition-bug",
+      "kind": "find-bug",
+      "prompt": {
+        "en": "The `events` table is partitioned by DATE(event_ts) and clustered by user_id. This query is billed as a full-table scan every time it runs. Find the bug.",
+        "fr": "La table `events` est partitionnée par DATE(event_ts) et clusterisée par user_id. Cette requête est facturée comme un scan complet à chaque exécution. Trouvez le bug."
+      },
+      "code": "SELECT user_id, COUNT(*) AS n\nFROM analytics.events\nWHERE FORMAT_TIMESTAMP('%Y-%m-%d', event_ts) = '2026-07-15'\nGROUP BY user_id;",
+      "choices": [
+        {
+          "id": "a",
+          "label": {
+            "en": "GROUP BY on a clustered column always forces a full scan",
+            "fr": "GROUP BY sur une colonne clusterisée force toujours un scan complet"
+          }
+        },
+        {
+          "id": "b",
+          "label": {
+            "en": "Wrapping event_ts in FORMAT_TIMESTAMP prevents partition pruning; the planner can't resolve it to a partition boundary",
+            "fr": "Envelopper event_ts dans FORMAT_TIMESTAMP empêche l'élagage de partitions ; le planificateur ne peut pas le résoudre à une borne de partition"
+          }
+        },
+        {
+          "id": "c",
+          "label": {
+            "en": "Partitioned tables can't be filtered with a string literal",
+            "fr": "Les tables partitionnées ne peuvent pas être filtrées avec un littéral chaîne"
+          }
+        },
+        {
+          "id": "d",
+          "label": {
+            "en": "COUNT(*) always scans every row regardless of partitioning",
+            "fr": "COUNT(*) scanne toujours toutes les lignes quel que soit le partitionnement"
+          }
+        }
+      ],
+      "answerId": "b",
+      "explanation": {
+        "en": "BigQuery's partition pruning needs the filter expressed in a form the planner can statically map to partitions — comparing DATE(event_ts) to a constant works, but formatting the timestamp into a string first hides the relationship, so BigQuery must scan every partition to evaluate the string comparison row by row. Rewrite as `WHERE DATE(event_ts) = '2026-07-15'` to restore pruning; clustering and COUNT(*) are unrelated to this bug.",
+        "fr": "L'élagage de partitions de BigQuery a besoin que le filtre soit exprimé sous une forme que le planificateur peut statiquement relier aux partitions — comparer DATE(event_ts) à une constante fonctionne, mais formater le timestamp en chaîne d'abord masque cette relation, donc BigQuery doit scanner chaque partition pour évaluer la comparaison de chaînes ligne par ligne. Réécrivez en `WHERE DATE(event_ts) = '2026-07-15'` pour restaurer l'élagage ; le clustering et COUNT(*) n'ont rien à voir avec ce bug."
+      },
+      "difficulty": 2
+    },
+    {
+      "id": "ex-data-analytics-clustering-mcq",
+      "kind": "mcq",
+      "prompt": {
+        "en": "What is the main difference in effect between partitioning and clustering on a BigQuery table?",
+        "fr": "Quelle est la principale différence d'effet entre partitionnement et clustering sur une table BigQuery ?"
+      },
+      "choices": [
+        {
+          "id": "a",
+          "label": {
+            "en": "Partitioning prunes whole partitions from a scan; clustering sorts data within partitions to narrow scans further",
+            "fr": "Le partitionnement élague des partitions entières d'un scan ; le clustering trie la donnée au sein des partitions pour réduire encore le scan"
+          }
+        },
+        {
+          "id": "b",
+          "label": {
+            "en": "They are interchangeable; either one alone gives identical cost savings",
+            "fr": "Ils sont interchangeables ; l'un ou l'autre seul donne des économies identiques"
+          }
+        },
+        {
+          "id": "c",
+          "label": {
+            "en": "Clustering reduces storage cost, partitioning reduces compute cost",
+            "fr": "Le clustering réduit le coût de stockage, le partitionnement réduit le coût de calcul"
+          }
+        },
+        {
+          "id": "d",
+          "label": {
+            "en": "Partitioning only applies to streaming tables, clustering only to batch-loaded tables",
+            "fr": "Le partitionnement ne s'applique qu'aux tables en streaming, le clustering qu'aux tables chargées en batch"
+          }
+        }
+      ],
+      "answerId": "a",
+      "explanation": {
+        "en": "Partitioning operates at a coarse grain (typically by date), letting BigQuery skip entire partitions when the filter matches. Clustering then physically co-locates rows by the clustering key columns within (or across) partitions, so a query filtering or aggregating on those columns reads fewer blocks. They compound rather than substitute for each other, and both affect compute (bytes scanned), not storage pricing.",
+        "fr": "Le partitionnement opère à gros grain (typiquement par date), laissant BigQuery sauter des partitions entières quand le filtre correspond. Le clustering co-localise ensuite physiquement les lignes selon les colonnes de clustering au sein (ou à travers) des partitions, si bien qu'une requête filtrant ou agrégeant sur ces colonnes lit moins de blocs. Ils se combinent plutôt qu'ils ne se substituent l'un à l'autre, et tous deux affectent le calcul (octets scannés), pas la tarification du stockage."
+      },
+      "difficulty": 1
+    },
+    {
+      "id": "ex-data-analytics-streaming-predict",
+      "kind": "predict-output",
+      "prompt": {
+        "en": "A Dataflow streaming pipeline uses 60-second fixed windows with `allowed_lateness=300` (5 minutes) and no early trigger. An event with event-time inside window [10:00:00, 10:01:00) arrives at processing time 10:08:00, after the watermark has already passed 10:07:00 for that window. What happens to it?",
+        "fr": "Un pipeline streaming Dataflow utilise des fenêtres fixes de 60 secondes avec `allowed_lateness=300` (5 minutes) et aucun trigger précoce. Un événement dont l'event-time est dans la fenêtre [10:00:00, 10:01:00) arrive en temps de traitement à 10:08:00, après que le watermark a déjà dépassé 10:07:00 pour cette fenêtre. Que lui arrive-t-il ?"
+      },
+      "code": "beam.WindowInto(\n    beam.window.FixedWindows(60),\n    trigger=beam.trigger.AfterWatermark(),\n    accumulation_mode=beam.trigger.AccumulationMode.ACCUMULATING,\n    allowed_lateness=300)",
+      "choices": [
+        {
+          "id": "a",
+          "label": {
+            "en": "It is dropped: the window's allowed lateness (window end + 300s = 10:06:00) has already passed by 10:08:00",
+            "fr": "Il est abandonné : la tolérance de la fenêtre (fin de fenêtre + 300 s = 10:06:00) est déjà dépassée à 10:08:00"
+          }
+        },
+        {
+          "id": "b",
+          "label": {
+            "en": "It is added to the next window automatically",
+            "fr": "Il est ajouté automatiquement à la fenêtre suivante"
+          }
+        },
+        {
+          "id": "c",
+          "label": {
+            "en": "It re-triggers the window and emits an updated result, since it arrived within allowed lateness",
+            "fr": "Il redéclenche la fenêtre et émet un résultat mis à jour, car arrivé dans la tolérance autorisée"
+          }
+        },
+        {
+          "id": "d",
+          "label": {
+            "en": "Dataflow pauses the pipeline until an operator manually resolves the late event",
+            "fr": "Dataflow met le pipeline en pause jusqu'à ce qu'un opérateur résolve manuellement l'événement tardif"
+          }
+        }
+      ],
+      "answerId": "a",
+      "explanation": {
+        "en": "allowed_lateness extends the window's lifetime past its end by 300s, so this window accepts late data only until 10:01:00 + 300s = 10:06:00. Arriving at 10:08:00, the event misses that deadline and is dropped silently — no error, no retry. Had it arrived before 10:06:00, the ACCUMULATING mode would have emitted an updated (corrected) pane for the window. This is why allowed_lateness must be sized against real-world client/network delay, not left at a default.",
+        "fr": "allowed_lateness prolonge la durée de vie de la fenêtre au-delà de sa fin de 300 s, donc cette fenêtre n'accepte de la donnée tardive que jusqu'à 10:01:00 + 300 s = 10:06:00. Arrivant à 10:08:00, l'événement manque cette échéance et est abandonné silencieusement — sans erreur, sans retry. S'il était arrivé avant 10:06:00, le mode ACCUMULATING aurait émis un pane mis à jour (corrigé) pour la fenêtre. C'est pourquoi allowed_lateness doit être dimensionné selon le délai réel client/réseau, pas laissé à sa valeur par défaut."
+      },
+      "difficulty": 3
+    },
+    {
+      "id": "ex-data-analytics-authorized-view-mcq",
+      "kind": "mcq",
+      "prompt": {
+        "en": "A team wants analysts to query a curated sales summary without ever being able to run arbitrary SQL against the raw orders table (which contains customer PII). What's the right mechanism?",
+        "fr": "Une équipe veut que les analystes interrogent un résumé de ventes préparé sans jamais pouvoir exécuter de SQL arbitraire sur la table brute des commandes (qui contient des PII clients). Quel est le bon mécanisme ?"
+      },
+      "choices": [
+        {
+          "id": "a",
+          "label": {
+            "en": "Grant analysts the BigQuery Data Viewer role on the raw orders table directly",
+            "fr": "Accorder aux analystes le rôle Data Viewer BigQuery directement sur la table brute des commandes"
+          }
+        },
+        {
+          "id": "b",
+          "label": {
+            "en": "Create a view over the curated query and authorize it on the source dataset, granting analysts access only to the view's dataset",
+            "fr": "Créer une vue sur la requête préparée et l'autoriser sur le dataset source, en n'accordant aux analystes l'accès qu'au dataset de la vue"
+          }
+        },
+        {
+          "id": "c",
+          "label": {
+            "en": "Export the summary to a CSV in GCS weekly and share the file",
+            "fr": "Exporter le résumé en CSV vers GCS chaque semaine et partager le fichier"
+          }
+        },
+        {
+          "id": "d",
+          "label": {
+            "en": "Enable BI Engine on the raw table so analysts query it faster",
+            "fr": "Activer BI Engine sur la table brute pour que les analystes la requêtent plus vite"
+          }
+        }
+      ],
+      "answerId": "b",
+      "explanation": {
+        "en": "An authorized view runs with its own dataset's permissions rather than the caller's, so granting analysts access only to the view's dataset lets them query the curated result while having zero rights on the raw orders table underneath. Granting Data Viewer directly defeats the purpose entirely; a CSV export is a manual, stale, unscalable workaround; BI Engine accelerates queries but does nothing for access control.",
+        "fr": "Une vue autorisée s'exécute avec les permissions de son propre dataset plutôt que celles de l'appelant, donc n'accorder aux analystes l'accès qu'au dataset de la vue leur permet d'interroger le résultat préparé tout en n'ayant aucun droit sur la table brute des commandes sous-jacente. Accorder Data Viewer directement annule complètement l'objectif ; un export CSV est un contournement manuel, périmé et non scalable ; BI Engine accélère les requêtes mais ne fait rien pour le contrôle d'accès."
+      },
+      "difficulty": 2
+    },
+    {
+      "id": "ex-data-analytics-dataflow-window-predict",
+      "kind": "predict-output",
+      "prompt": {
+        "en": "This Dataflow pipeline is deployed to production and left running after a one-time backfill migration finishes. The team moves on to other work. What is the operational/cost consequence, weeks later?",
+        "fr": "Ce pipeline Dataflow est déployé en production et laissé actif après la fin d'une migration de backfill ponctuelle. L'équipe passe à autre chose. Quelle est la conséquence opérationnelle/de coût, des semaines plus tard ?"
+      },
+      "code": "gcloud dataflow flex-template run backfill-job \\\n  --template-file-gcs-location=gs://templates/backfill.json \\\n  --region=europe-west1 \\\n  --parameters inputTopic=projects/my-app/topics/legacy-events",
+      "choices": [
+        {
+          "id": "a",
+          "label": {
+            "en": "Nothing: Dataflow streaming jobs automatically scale to zero and stop billing once the backlog is drained",
+            "fr": "Rien : les jobs Dataflow streaming redescendent automatiquement à zéro et cessent de facturer une fois le backlog vidé"
+          }
+        },
+        {
+          "id": "b",
+          "label": {
+            "en": "The job keeps holding worker VMs and billing continuously, even with an empty backlog, until someone explicitly drains or cancels it",
+            "fr": "Le job continue de retenir des VM workers et de facturer en continu, même avec un backlog vide, jusqu'à ce que quelqu'un le drain ou l'annule explicitement"
+          }
+        },
+        {
+          "id": "c",
+          "label": {
+            "en": "Google automatically cancels streaming jobs after 7 days of inactivity",
+            "fr": "Google annule automatiquement les jobs streaming après 7 jours d'inactivité"
+          }
+        },
+        {
+          "id": "d",
+          "label": {
+            "en": "The job fails silently once the Pub/Sub topic runs out of new messages",
+            "fr": "Le job échoue silencieusement une fois le topic Pub/Sub à court de nouveaux messages"
+          }
+        }
+      ],
+      "answerId": "b",
+      "explanation": {
+        "en": "Streaming Dataflow pipelines are designed to run indefinitely, watching a source for new data — they never scale down to zero workers, and a subscription with no new messages simply leaves the job idling with its provisioned worker pool, billing the whole time. This is the single most common Dataflow cost surprise: a job launched for a one-off task and never explicitly drained/cancelled. There is no automatic timeout or cancellation.",
+        "fr": "Les pipelines Dataflow streaming sont conçus pour tourner indéfiniment, surveillant une source pour de nouvelles données — ils ne redescendent jamais à zéro worker, et une souscription sans nouveaux messages laisse simplement le job inactif avec son pool de workers provisionné, facturant tout ce temps. C'est la mauvaise surprise de coût Dataflow la plus fréquente : un job lancé pour une tâche ponctuelle et jamais explicitement drainé/annulé. Il n'existe aucun timeout ni annulation automatique."
+      },
+      "difficulty": 2
+    },
+    {
+      "id": "ex-data-analytics-dataproc-vs-dataflow-mcq",
+      "kind": "mcq",
+      "prompt": {
+        "en": "A client has a 200k-line, well-tuned Spark/Hive codebase running nightly on-prem, using several custom JVM UDFs and a specific Hive metastore integration. They want to move to GCP with minimal risk before their next audit. What's the sound recommendation?",
+        "fr": "Un client a un codebase Spark/Hive de 200k lignes, bien réglé, tournant chaque nuit on-prem, utilisant plusieurs UDF JVM sur mesure et une intégration spécifique au metastore Hive. Il veut migrer vers GCP avec un risque minimal avant son prochain audit. Quelle est la recommandation saine ?"
+      },
+      "choices": [
+        {
+          "id": "a",
+          "label": {
+            "en": "Rewrite the whole pipeline in Apache Beam and run it on Dataflow for a fully managed experience",
+            "fr": "Réécrire tout le pipeline en Apache Beam et le faire tourner sur Dataflow pour une expérience entièrement managée"
+          }
+        },
+        {
+          "id": "b",
+          "label": {
+            "en": "Lift-and-shift the Spark/Hive jobs onto Dataproc, keeping the existing codebase and UDFs, and revisit modernization later",
+            "fr": "Faire un lift-and-shift des jobs Spark/Hive vers Dataproc, en gardant le codebase et les UDF existants, et revoir la modernisation plus tard"
+          }
+        },
+        {
+          "id": "c",
+          "label": {
+            "en": "Convert all the logic to BigQuery SQL stored procedures",
+            "fr": "Convertir toute la logique en procédures stockées SQL BigQuery"
+          }
+        },
+        {
+          "id": "d",
+          "label": {
+            "en": "Keep running on-prem indefinitely since GCP has no equivalent to custom Hive metastore integrations",
+            "fr": "Continuer à tourner on-prem indéfiniment, GCP n'ayant pas d'équivalent aux intégrations Hive metastore sur mesure"
+          }
+        }
+      ],
+      "answerId": "b",
+      "explanation": {
+        "en": "This is exactly the scenario where Dataproc wins: real existing investment in Spark/Hive code and custom JVM UDFs that would be expensive and risky to rewrite under audit deadline pressure. Dataproc runs the same OSS binaries, ports the Hive metastore integration with minimal change, and defers a Beam/BigQuery modernization to a calmer phase. Rewriting to Beam or BigQuery SQL under time pressure risks the audit; GCP does support managed Hive metastore integration, so staying on-prem indefinitely isn't necessary.",
+        "fr": "C'est exactement le scénario où Dataproc gagne : un investissement réel en code Spark/Hive et UDF JVM sur mesure qu'il serait coûteux et risqué de réécrire sous la pression d'une échéance d'audit. Dataproc fait tourner les mêmes binaires OSS, porte l'intégration du metastore Hive avec un minimum de changement, et reporte une modernisation vers Beam/BigQuery à une phase plus calme. Réécrire vers Beam ou du SQL BigQuery sous pression de temps met l'audit en péril ; GCP prend en charge une intégration managée du metastore Hive, donc rester on-prem indéfiniment n'est pas nécessaire."
+      },
+      "difficulty": 2
+    },
+    {
+      "id": "ex-data-analytics-composer-cost-bug",
+      "kind": "find-bug",
+      "prompt": {
+        "en": "A consulting team inherits this monthly GCP bill breakdown for a client's data platform and is asked why costs are 3x the estimate. Find the underlying issues.",
+        "fr": "Une équipe de conseil hérite de cette répartition de facture GCP mensuelle pour la plateforme data d'un client et doit expliquer pourquoi les coûts sont 3x l'estimation. Trouvez les problèmes sous-jacents."
+      },
+      "code": "# Monthly cost breakdown (partial)\n# BigQuery on-demand: 38,000 EUR   (queries have no WHERE clause on the date column)\n# Dataflow streaming job \"legacy-sync\": 9,500 EUR   (job has been running since a migration 4 months ago, backlog is empty)\n# Cloud Composer environment (large, always on): 6,200 EUR   (orchestrates 3 daily DAGs, ~15 min total runtime/day)",
+      "choices": [
+        {
+          "id": "a",
+          "label": {
+            "en": "All three costs are unavoidable baseline GCP fees regardless of usage",
+            "fr": "Les trois coûts sont des frais de base GCP incompressibles, quel que soit l'usage"
+          }
+        },
+        {
+          "id": "b",
+          "label": {
+            "en": "Missing partition filters causing full-table BigQuery scans, an idle streaming Dataflow job never drained, and an oversized always-on Composer environment for a light DAG load",
+            "fr": "Des filtres de partition manquants causant des scans complets BigQuery, un job Dataflow streaming inactif jamais drainé, et un environnement Composer surdimensionné et toujours actif pour une charge de DAG légère"
+          }
+        },
+        {
+          "id": "c",
+          "label": {
+            "en": "The bill is wrong; GCP doesn't charge for idle Dataflow jobs or unused Composer capacity",
+            "fr": "La facture est erronée ; GCP ne facture pas les jobs Dataflow inactifs ni la capacité Composer inutilisée"
+          }
+        },
+        {
+          "id": "d",
+          "label": {
+            "en": "Switching everything to Dataproc would automatically fix all three line items",
+            "fr": "Basculer le tout vers Dataproc corrigerait automatiquement les trois postes"
+          }
+        }
+      ],
+      "answerId": "b",
+      "explanation": {
+        "en": "Each line matches a canonical data-analytics cost trap: BigQuery queries without a date filter scan the whole table on every run under on-demand pricing; a streaming Dataflow job holds its worker pool and bills continuously regardless of an empty backlog, and this one has clearly outlived its migration purpose; a large Composer environment is always-on infrastructure, so sizing it for heavy orchestration while only running 15 minutes of actual DAG work a day wastes most of the spend. Fixes: add partition filters (or enforce them via policy/dry-run checks), drain/cancel the finished migration job, and downsize or consolidate the Composer environment. Dataproc is unrelated to any of these three services.",
+        "fr": "Chaque ligne correspond à un piège de coût classique en data-analytics : des requêtes BigQuery sans filtre de date scannent la table entière à chaque exécution en tarification on-demand ; un job Dataflow streaming retient son pool de workers et facture en continu quel que soit le backlog, et celui-ci a manifestement survécu à l'utilité de sa migration ; un grand environnement Composer est une infrastructure always-on, donc le dimensionner pour une orchestration lourde alors que seulement 15 minutes de DAG tournent réellement par jour gaspille l'essentiel de la dépense. Correctifs : ajouter des filtres de partition (ou les imposer via une politique/des contrôles dry-run), drainer/annuler le job de migration terminé, et redimensionner ou consolider l'environnement Composer. Dataproc n'a aucun rapport avec ces trois services."
+      },
+      "difficulty": 3
+    }
+  ]
+}

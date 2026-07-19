@@ -1,0 +1,755 @@
+{
+  "id": "serverless-messaging",
+  "title": { "en": "Messaging & eventing", "fr": "Messaging & événements" },
+  "tagline": {
+    "en": "Pub/Sub, Eventarc, Tasks, Scheduler, Workflows",
+    "fr": "Pub/Sub, Eventarc, Tasks, Scheduler, Workflows"
+  },
+  "icon": "📨",
+  "lessons": [
+    {
+      "id": "serverless-messaging-pubsub-fundamentals",
+      "title": {
+        "en": "Pub/Sub: topics, subscriptions, delivery",
+        "fr": "Pub/Sub : topics, abonnements, livraison"
+      },
+      "minutes": 5,
+      "blocks": [
+        {
+          "type": "text",
+          "body": {
+            "en": "Pub/Sub decouples publishers from subscribers through topics: a publisher writes a message to a topic with zero knowledge of who, if anyone, reads it. A subscription is an independent, durable read cursor over that topic — create three subscriptions on the same topic and you get three full copies of every message, each acked and retried on its own schedule. That fan-out (one event, N independent consumers) is Pub/Sub's defining trait and the reason it wins over Cloud Tasks whenever more than one system needs to react to the same fact.",
+            "fr": "Pub/Sub découple les producteurs des consommateurs via des topics : un producteur écrit un message sur un topic sans rien savoir de qui, le cas échéant, le lira. Un abonnement (subscription) est un curseur de lecture indépendant et durable sur ce topic — créez trois abonnements sur le même topic et vous obtenez trois copies complètes de chaque message, chacune acquittée et retentée selon son propre rythme. Ce fan-out (un événement, N consommateurs indépendants) est la marque de fabrique de Pub/Sub et la raison pour laquelle il l'emporte sur Cloud Tasks dès que plusieurs systèmes doivent réagir au même fait."
+          }
+        },
+        {
+          "type": "text",
+          "body": {
+            "en": "Delivery comes in two shapes. Pull: your consumer (a Cloud Run service, a GKE pod, a worker VM) calls the API to fetch a batch and controls its own throughput — the default for anything backend-shaped. Push: Pub/Sub calls an HTTPS endpoint directly; simpler to wire but your endpoint now owns retry semantics implicitly (a 2xx acks the message, anything else or a timeout triggers redelivery). Ordering keys add FIFO delivery scoped to a key: messages sharing a key deliver strictly in order, one at a time, while different keys still parallelize freely.",
+            "fr": "La livraison existe sous deux formes. Pull : votre consommateur (un service Cloud Run, un pod GKE, une VM worker) appelle l'API pour récupérer un lot et maîtrise son propre débit — le défaut pour tout ce qui ressemble à du backend. Push : Pub/Sub appelle directement un endpoint HTTPS ; plus simple à câbler, mais votre endpoint porte désormais implicitement la sémantique de retry (un 2xx acquitte le message, tout le reste ou un timeout déclenche une redélivrance). Les ordering keys ajoutent une livraison FIFO limitée à une clé : les messages partageant une clé sont livrés strictement dans l'ordre, un par un, tandis que des clés différentes se parallélisent librement."
+          }
+        },
+        {
+          "type": "code",
+          "code": "# Topic + ordered, DLQ-backed pull subscription\ngcloud pubsub topics create orders\n\ngcloud pubsub subscriptions create orders-worker \\\n  --topic=orders \\\n  --enable-message-ordering \\\n  --dead-letter-topic=orders-dlq \\\n  --max-delivery-attempts=5 \\\n  --ack-deadline=30",
+          "caption": {
+            "en": "After 5 failed attempts, the message stops retrying against the worker and lands in orders-dlq instead.",
+            "fr": "Après 5 tentatives échouées, le message arrête de retenter contre le worker et atterrit dans orders-dlq à la place."
+          }
+        },
+        {
+          "type": "gotcha",
+          "body": {
+            "en": "At-least-once is not a corner case, it is the delivery contract: a message can redeliver even after you've processed and acked it, if the ack lands microseconds after the deadline or your process crashes between the two. Ordering keys are also misread constantly — setting one on a message does nothing by itself; message ordering must be explicitly enabled on the subscription, and a key you never vary (like a single constant string) buys you strict ordering across your entire traffic, which is usually not what you wanted.",
+            "fr": "At-least-once n'est pas un cas limite, c'est le contrat de livraison : un message peut être redélivré même après avoir été traité et acquitté, si l'ack arrive quelques microsecondes après le deadline ou si votre processus plante entre les deux. Les ordering keys sont aussi constamment mal comprises — en définir une sur un message ne fait rien à elle seule ; le message ordering doit être explicitement activé sur l'abonnement, et une clé qui ne varie jamais (une simple chaîne constante) vous impose un ordre strict sur tout votre trafic, ce qui n'est en général pas ce que vous vouliez."
+          }
+        },
+        {
+          "type": "tip",
+          "body": {
+            "en": "Dead-letter topics catch messages that exhaust max-delivery-attempts (nack, or ack-deadline expiry, repeated N times) — instead of retrying a poison message forever and starving the queue's throughput, Pub/Sub forwards it to a topic you designate so you can inspect, alert on, or replay it separately. Retention and seek are the incident-recovery pair: unacked (and optionally acked) messages are retained up to 7 days by default (configurable further), and seek lets you rewind a subscription's cursor to a timestamp or a snapshot — a legitimate way to replay a window of traffic, unlike re-publishing from scratch.",
+            "fr": "Les dead-letter topics récupèrent les messages qui épuisent max-delivery-attempts (nack, ou expiration de l'ack-deadline, répétés N fois) — plutôt que de retenter indéfiniment un message empoisonné et d'asphyxier le débit de la file, Pub/Sub le transfère vers un topic que vous désignez, pour l'inspecter, alerter dessus ou le rejouer séparément. Rétention et seek forment le duo de récupération d'incident : les messages non acquittés (et, en option, acquittés) sont conservés jusqu'à 7 jours par défaut (configurable au-delà), et seek permet de rembobiner le curseur d'un abonnement vers un timestamp ou un snapshot — une manière légitime de rejouer une fenêtre de trafic, contrairement à une republication depuis zéro."
+          }
+        }
+      ]
+    },
+    {
+      "id": "serverless-messaging-eventarc",
+      "title": {
+        "en": "Eventarc: unified eventing across GCP",
+        "fr": "Eventarc : événementiel unifié sur GCP"
+      },
+      "minutes": 5,
+      "blocks": [
+        {
+          "type": "text",
+          "body": {
+            "en": "Eventarc is the routing layer that normalizes events from dozens of GCP sources — Cloud Storage object changes, Firestore writes, and effectively any service through Cloud Audit Logs — plus your own custom sources, into the CloudEvents format, then delivers them to a target: Cloud Run, GKE, Workflows, or Cloud Run functions. Before Eventarc, each service invented its own trigger plumbing; now you get one trigger resource, one IAM binding pattern (a service account with invoker rights on the target) and one filtering syntax regardless of where the event originates.",
+            "fr": "Eventarc est la couche de routage qui normalise les événements issus de dizaines de sources GCP — changements d'objets Cloud Storage, écritures Firestore, et en pratique n'importe quel service via Cloud Audit Logs — plus vos propres sources personnalisées, au format CloudEvents, avant de les livrer à une cible : Cloud Run, GKE, Workflows ou Cloud Run functions. Avant Eventarc, chaque service inventait sa propre plomberie de déclenchement ; désormais vous disposez d'une seule ressource trigger, d'un seul schéma de binding IAM (un compte de service avec le rôle invoker sur la cible) et d'une seule syntaxe de filtrage, quelle que soit l'origine de l'événement."
+          }
+        },
+        {
+          "type": "text",
+          "body": {
+            "en": "Two trigger shapes matter operationally. A handful of sources (Cloud Storage, Firestore, and a few others) support direct events: Eventarc talks to the provider natively, lower latency, nothing for you to manage. Everything else — custom application events, or sources without direct integration — arrives as a Pub/Sub-transport trigger, where Eventarc creates (or you point it at) an underlying topic. Prefer Pub/Sub-transport explicitly when you want to see and control that topic yourself: custom retry policy, a dead-letter topic, or fan-out to a second subscriber Eventarc doesn't know about.",
+            "fr": "Deux formes de trigger comptent en pratique. Une poignée de sources (Cloud Storage, Firestore et quelques autres) supportent les événements directs : Eventarc parle nativement au fournisseur, latence plus faible, rien à gérer de votre côté. Tout le reste — événements applicatifs personnalisés, ou sources sans intégration directe — arrive via un trigger à transport Pub/Sub, où Eventarc crée (ou vous pointe vers) un topic sous-jacent. Préférez explicitement le transport Pub/Sub quand vous voulez voir et contrôler ce topic vous-même : politique de retry personnalisée, dead-letter topic, ou fan-out vers un second abonné qu'Eventarc ignore."
+          }
+        },
+        {
+          "type": "code",
+          "code": "gcloud eventarc triggers create on-gcs-finalize \\\n  --location=europe-west1 \\\n  --destination-run-service=thumbnailer \\\n  --destination-run-region=europe-west1 \\\n  --event-filters=\"type=google.cloud.storage.object.v1.finalized\" \\\n  --event-filters=\"bucket=my-app-uploads\" \\\n  --service-account=eventarc-invoker@my-app.iam.gserviceaccount.com",
+          "caption": {
+            "en": "Filters scope the trigger to one bucket and one event type before your code ever runs.",
+            "fr": "Les filtres restreignent le trigger à un seul bucket et un seul type d'événement, avant même que votre code s'exécute."
+          }
+        },
+        {
+          "type": "gotcha",
+          "body": {
+            "en": "Audit-log-based triggers (the ones watching \"any API call on any resource\") only fire if Cloud Audit Logs is actually recording that signal: Admin Activity logs are on by default, but Data Access logs — which cover most read/write API calls — are off by default for most services and billed when enabled. A trigger that looks ACTIVE, has a correct filter, and simply never fires is, nine times out of ten, a missing Data Access log config rather than a broken trigger.",
+            "fr": "Les triggers basés sur les audit logs (ceux qui surveillent « n'importe quel appel API sur n'importe quelle ressource ») ne se déclenchent que si Cloud Audit Logs enregistre effectivement ce signal : les Admin Activity logs sont activés par défaut, mais les Data Access logs — qui couvrent la plupart des appels API de lecture/écriture — sont désactivés par défaut pour la majorité des services et facturés une fois activés. Un trigger qui paraît ACTIVE, avec un filtre correct, et qui ne se déclenche simplement jamais, c'est neuf fois sur dix une configuration de Data Access log manquante, pas un trigger cassé."
+          }
+        },
+        {
+          "type": "tip",
+          "body": {
+            "en": "Event filters are evaluated by Eventarc before your code ever runs, including path-pattern filters on structured attributes (bucket name, subresource, method name). Push filtering as far left as possible: a trigger scoped to `bucket=my-app-uploads` and a specific event type means your Cloud Run service never cold-starts for events from unrelated buckets, instead of receiving everything and branching in application code — cheaper, faster, and it keeps the handler's logic focused on the one thing it's actually for.",
+            "fr": "Les filtres d'événements sont évalués par Eventarc avant même que votre code s'exécute, y compris les filtres à motifs sur des attributs structurés (nom de bucket, sous-ressource, nom de méthode). Poussez le filtrage le plus en amont possible : un trigger restreint à `bucket=my-app-uploads` et à un type d'événement précis signifie que votre service Cloud Run ne subit jamais de cold start pour des événements d'un bucket qui ne le concerne pas, plutôt que de tout recevoir et de brancher en code applicatif — moins cher, plus rapide, et ça garde la logique du handler concentrée sur ce pour quoi il existe vraiment."
+          }
+        }
+      ]
+    },
+    {
+      "id": "serverless-messaging-cloud-tasks",
+      "title": {
+        "en": "Cloud Tasks: queues, retries, scheduling",
+        "fr": "Cloud Tasks : files, retries, planification"
+      },
+      "minutes": 5,
+      "blocks": [
+        {
+          "type": "text",
+          "body": {
+            "en": "Cloud Tasks is not a Pub/Sub with extra steps, despite both being called \"queues.\" A task targets exactly one HTTP(S) (or App Engine) endpoint that you name per task — no subscribers, no fan-out, no other consumer will ever see it. Reach for it when you need to decouple a single deferred call to your own service with fine per-task control: exactly when it fires, how fast the queue drains, and how failures back off — not to broadcast a fact to independent systems, which is Pub/Sub's job.",
+            "fr": "Cloud Tasks n'est pas un Pub/Sub avec des étapes en plus, même si on parle de « file » dans les deux cas. Une tâche cible exactement un endpoint HTTP(S) (ou App Engine) que vous nommez par tâche — pas d'abonnés, pas de fan-out, aucun autre consommateur ne la verra jamais. On y recourt quand il faut découpler un unique appel différé vers son propre service avec un contrôle fin par tâche : le moment exact du déclenchement, la vitesse de vidage de la file, et la façon dont les échecs sont retentés — pas pour diffuser un fait à des systèmes indépendants, qui est le travail de Pub/Sub."
+          }
+        },
+        {
+          "type": "text",
+          "body": {
+            "en": "Rate limiting lives on the queue, not the caller: max-dispatches-per-second and max-concurrent-dispatches throttle calls to a fragile downstream (a legacy partner API with a hard ceiling) no matter how fast your code enqueues tasks — enqueue a burst of 50,000 and the queue still drains at the configured rate. Retry configuration is equally queue-scoped: min/max backoff, a multiplier, and max-attempts or max-retry-duration, with exponential backoff and jitter applied automatically. Tune these against the downstream's actual recovery behavior, not a guessed default — an over-eager retry schedule can DDoS your own partner.",
+            "fr": "Le rate limiting vit sur la file, pas chez l'appelant : max-dispatches-per-second et max-concurrent-dispatches bride les appels vers un aval fragile (une API partenaire legacy avec un plafond strict), quelle que soit la vitesse à laquelle votre code empile des tâches — empilez une rafale de 50 000 et la file continue de se vider au rythme configuré. La configuration de retry est tout aussi liée à la file : backoff min/max, un multiplicateur, et max-attempts ou max-retry-duration, avec backoff exponentiel et jitter appliqués automatiquement. Réglez ces valeurs sur le vrai comportement de reprise de l'aval, pas sur un défaut deviné — un planning de retry trop agressif peut faire un DDoS à votre propre partenaire."
+          }
+        },
+        {
+          "type": "code",
+          "code": "gcloud tasks queues create email-queue \\\n  --max-dispatches-per-second=5 \\\n  --max-concurrent-dispatches=10 \\\n  --max-attempts=8 \\\n  --min-backoff=10s --max-backoff=300s\n\ngcloud tasks create-http-task \\\n  --queue=email-queue \\\n  --url=https://api.my-app.com/send-confirmation \\\n  --schedule-time=\"2026-07-19T18:00:00Z\" \\\n  --body-content='{\"orderId\":\"o-1234\"}'",
+          "caption": {
+            "en": "One queue caps the downstream call rate; schedule-time defers a single task without any cron.",
+            "fr": "Une file plafonne le débit d'appels vers l'aval ; schedule-time diffère une tâche unique sans aucun cron."
+          }
+        },
+        {
+          "type": "gotcha",
+          "body": {
+            "en": "A task's target endpoint must ack quickly and idempotently, exactly like a Pub/Sub push subscription: any non-2xx response or a timeout re-triggers delivery under the queue's retry policy, and duplicates remain possible near the retry boundary (the queue commits to a retry the instant before your handler's response lands). The common design mistake is reaching for Pub/Sub to \"fire one HTTP call later\" and rebuilding, badly, the per-task dedupe and named-task uniqueness Cloud Tasks already gives you for free.",
+            "fr": "L'endpoint cible d'une tâche doit acquitter vite et de façon idempotente, exactement comme un abonnement push Pub/Sub : toute réponse non-2xx ou un timeout redéclenche une livraison selon la politique de retry de la file, et des doublons restent possibles près de la frontière de retry (la file s'engage dans un retry l'instant avant que la réponse de votre handler n'arrive). L'erreur de conception classique consiste à se rabattre sur Pub/Sub pour « déclencher un appel HTTP plus tard » et à reconstruire, mal, la déduplication par tâche et l'unicité des tâches nommées que Cloud Tasks offre déjà gratuitement."
+          }
+        },
+        {
+          "type": "tip",
+          "body": {
+            "en": "Scheduling for the future is a native field on the task itself (`schedule_time`), not a workaround bolted onto a queue: \"call this endpoint in 3 hours\" is one API call, no cron, no delay-queue hack, and no need to drag in Cloud Scheduler — which exists for recurring triggers, not one-off deferred calls. If the delay is defined by \"when this specific business event happened,\" not by a wall-clock recurrence, that's usually the tell you actually want Tasks, not Scheduler.",
+            "fr": "Planifier pour le futur est un champ natif de la tâche elle-même (`schedule_time`), pas un contournement greffé sur une file : « appelle cet endpoint dans 3 heures » est un unique appel API, sans cron, sans bricolage de file à délai, et sans besoin de convoquer Cloud Scheduler — qui existe pour les déclencheurs récurrents, pas les appels différés ponctuels. Si le délai est défini par « quand cet événement métier précis s'est produit » et non par une récurrence d'horloge murale, c'est en général le signe que vous voulez Tasks, pas Scheduler."
+          }
+        }
+      ]
+    },
+    {
+      "id": "serverless-messaging-scheduler-workflows",
+      "title": {
+        "en": "Cloud Scheduler & Workflows",
+        "fr": "Cloud Scheduler & Workflows"
+      },
+      "minutes": 5,
+      "blocks": [
+        {
+          "type": "text",
+          "body": {
+            "en": "Cloud Scheduler is a managed cron: a unix-cron expression fires a target — an HTTP(S) endpoint, a Pub/Sub topic, or an App Engine service — on a recurring schedule, with its own retry configuration independent of whatever the target does with the call. It answers exactly one question, \"what runs at this time,\" and nothing else: no branching, no multi-step sequencing, no state between runs. The moment a job needs to make a decision based on a previous step's result, Scheduler is the wrong layer and Workflows is the right one.",
+            "fr": "Cloud Scheduler est un cron managé : une expression unix-cron déclenche une cible — un endpoint HTTP(S), un topic Pub/Sub, ou un service App Engine — selon un planning récurrent, avec sa propre configuration de retry indépendante de ce que la cible fait de l'appel. Il répond à une seule question, « qu'est-ce qui s'exécute à cette heure », et rien d'autre : pas de branchement, pas d'enchaînement multi-étapes, pas d'état entre les exécutions. Dès qu'un job doit prendre une décision fondée sur le résultat d'une étape précédente, Scheduler est la mauvaise couche et Workflows la bonne."
+          }
+        },
+        {
+          "type": "text",
+          "body": {
+            "en": "Workflows is serverless orchestration: a YAML or JSON definition of steps that call HTTP APIs — including any GCP API through built-in connectors — branch on conditions, loop, retry with a custom policy per step, and pass state forward, with zero infrastructure to provision and billing per step executed. It's the right tool for a sequence of calls with decisions in between (\"check inventory, if available reserve it, else notify\") that would otherwise turn into a fragile chain of Cloud Run functions glued together by ad-hoc Pub/Sub messages and shared assumptions about ordering.",
+            "fr": "Workflows est de l'orchestration serverless : une définition YAML ou JSON d'étapes qui appellent des API HTTP — y compris n'importe quelle API GCP via des connecteurs intégrés — branchent sur des conditions, bouclent, retentent avec une politique personnalisée par étape, et font transiter de l'état, sans aucune infrastructure à provisionner et une facturation par étape exécutée. C'est le bon outil pour une séquence d'appels avec des décisions entre eux (« vérifier le stock, si disponible le réserver, sinon notifier ») qui deviendrait sinon une chaîne fragile de Cloud Run functions reliées par des messages Pub/Sub ad hoc et des hypothèses partagées sur l'ordre."
+          }
+        },
+        {
+          "type": "code",
+          "code": "main:\n  steps:\n    - checkStock:\n        call: http.get\n        args:\n          url: https://inventory.my-app.com/check\n          query:\n            sku: ${sku}\n        result: stockResult\n    - decide:\n        switch:\n          - condition: ${stockResult.body.available}\n            next: reserve\n        next: notifyOutOfStock\n    - reserve:\n        call: http.post\n        args:\n          url: https://inventory.my-app.com/reserve\n          body:\n            sku: ${sku}\n        result: reserveResult\n    - notifyOutOfStock:\n        call: sys.log\n        args:\n          text: \"out of stock\"",
+          "caption": {
+            "en": "One definition: a conditional branch, two downstream calls, no cluster and no glue code.",
+            "fr": "Une seule définition : un branchement conditionnel, deux appels en aval, aucun cluster ni code de liaison."
+          }
+        },
+        {
+          "type": "gotcha",
+          "body": {
+            "en": "Workflows and Composer (managed Airflow) get conflated constantly, and the confusion is expensive: Workflows fits lightweight API orchestration measured in seconds to minutes, billed per step, with no scheduler infrastructure to run. Composer fits data-pipeline orchestration — complex DAGs, backfills, sensors, cross-run dependencies, and lineage across long-running batch jobs. A nightly ETL DAG built in Workflows will work fine for months, right up until you need Airflow-grade backfill or dependency tooling, at which point you're fighting the tool instead of using it.",
+            "fr": "Workflows et Composer (Airflow managé) sont constamment confondus, et cette confusion coûte cher : Workflows convient à l'orchestration d'API légère, mesurée en secondes ou minutes, facturée par étape, sans infrastructure d'ordonnanceur à faire tourner. Composer convient à l'orchestration de pipelines de données — DAG complexes, backfills, sensors, dépendances entre exécutions, et traçabilité de jobs batch longue durée. Un DAG ETL nocturne construit dans Workflows fonctionnera bien pendant des mois, jusqu'au jour où vous aurez besoin d'outillage de backfill ou de dépendances façon Airflow — à ce moment-là, vous luttez contre l'outil au lieu de vous en servir."
+          }
+        },
+        {
+          "type": "tip",
+          "body": {
+            "en": "The standard \"cron that does something smart\" pattern is Scheduler plus Workflows: Scheduler fires on time, and its HTTP target is a Workflows execution (or a Pub/Sub message that Eventarc routes into one). This keeps \"when\" (Scheduler, trivially testable by triggering the job manually) cleanly separated from \"what\" (Workflows, testable by running the definition with mock inputs) instead of baking a cron expression and business logic into the same Cloud Function.",
+            "fr": "Le motif standard « un cron qui fait quelque chose d'intelligent » est Scheduler plus Workflows : Scheduler se déclenche à l'heure dite, et sa cible HTTP est une exécution Workflows (ou un message Pub/Sub qu'Eventarc route vers l'une d'elles). Cela sépare proprement le « quand » (Scheduler, trivialement testable en déclenchant le job à la main) du « quoi » (Workflows, testable en exécutant la définition avec des entrées simulées), plutôt que de cuire une expression cron et de la logique métier dans la même Cloud Function."
+          }
+        }
+      ]
+    },
+    {
+      "id": "serverless-messaging-choosing-glue",
+      "title": {
+        "en": "Choosing the right glue, and its gotchas",
+        "fr": "Choisir la bonne glu, et ses pièges"
+      },
+      "minutes": 5,
+      "blocks": [
+        {
+          "type": "text",
+          "body": {
+            "en": "The interview-grade decision tree: one event that N independent systems must react to → Pub/Sub. A GCP (or custom) event that should route to one target with minimal plumbing → Eventarc, which likely rides on Pub/Sub under the hood but you never touch that topic. A single deferred, rate-controlled HTTP call to your own endpoint → Cloud Tasks. A time-based trigger with no dependency on business events → Cloud Scheduler. A sequence of API calls with branching and per-step retries → Workflows. Most production systems compose several of these — Scheduler → Workflows → Tasks → Pub/Sub fan-out is a completely ordinary shape, not over-engineering.",
+            "fr": "L'arbre de décision niveau entretien : un événement auquel N systèmes indépendants doivent réagir → Pub/Sub. Un événement GCP (ou personnalisé) qui doit router vers une cible avec un minimum de plomberie → Eventarc, qui repose probablement sur Pub/Sub en coulisses mais dont vous ne touchez jamais le topic. Un unique appel HTTP différé et à débit contrôlé vers votre propre endpoint → Cloud Tasks. Un déclencheur temporel sans dépendance à un événement métier → Cloud Scheduler. Une séquence d'appels API avec branchements et retries par étape → Workflows. La plupart des systèmes en production composent plusieurs de ces briques — Scheduler → Workflows → Tasks → fan-out Pub/Sub est un schéma parfaitement ordinaire, pas de la sur-ingénierie."
+          }
+        },
+        {
+          "type": "text",
+          "body": {
+            "en": "Idempotent handlers deserve repeating because every path in this lesson set shares the same contract: Pub/Sub push, Eventarc targets and Cloud Tasks targets are all at-least-once by design, not by bug. Every handler must tolerate being invoked twice with the same payload — dedupe on the message ID, event ID, or a natural business key inside a transactional write, never on \"this can only happen once.\" This bites hardest during a rolling deploy or a downstream 5xx spike, exactly when duplicate-safe code matters most and is hardest to retrofit under pressure.",
+            "fr": "Les handlers idempotents méritent d'être répétés car chaque chemin de ce module partage le même contrat : push Pub/Sub, cibles Eventarc et cibles Cloud Tasks sont toutes at-least-once par conception, pas par bug. Chaque handler doit tolérer d'être invoqué deux fois avec la même charge utile — dédupliquer sur l'ID du message, l'ID de l'événement, ou une clé métier naturelle dans une écriture transactionnelle, jamais sur « ça ne peut arriver qu'une fois ». Cela mord le plus fort pendant un déploiement progressif ou un pic de 5xx en aval, précisément quand le code résistant aux doublons compte le plus et est le plus dur à ajouter sous pression."
+          }
+        },
+        {
+          "type": "code",
+          "code": "# Anti-pattern: one key for every message serializes the whole topic\nfor order in orders:\n    publisher.publish(topic_path, order.to_bytes(), ordering_key=\"orders\")\n\n# Fix: key on the actual ordering boundary\nfor order in orders:\n    publisher.publish(topic_path, order.to_bytes(), ordering_key=order.customer_id)",
+          "caption": {
+            "en": "Same throughput target, radically different parallelism once the key reflects the real boundary.",
+            "fr": "Même objectif de débit, parallélisme radicalement différent dès que la clé reflète la vraie frontière."
+          }
+        },
+        {
+          "type": "gotcha",
+          "body": {
+            "en": "Ordering-key hotspotting is the most common Pub/Sub throughput bug: assigning the same key to every message (a literal `\"orders\"` string, or a single tenant ID in a multi-tenant system) forces Pub/Sub to deliver strictly one outstanding message at a time for that key, no matter how many subscribers or how much you scale consumers. A burst of 10,000 messages under one key can take orders of magnitude longer than the same burst spread across a few thousand keys. Key on the actual ordering boundary you need — an order ID, a device ID — never on the whole system.",
+            "fr": "Le hotspotting d'ordering key est le bug de débit Pub/Sub le plus courant : assigner la même clé à chaque message (une chaîne littérale `\"orders\"`, ou un seul ID de tenant dans un système multi-tenant) force Pub/Sub à ne livrer qu'un seul message en vol à la fois pour cette clé, quel que soit le nombre d'abonnés ou l'échelle des consommateurs. Une rafale de 10 000 messages sous une seule clé peut prendre des ordres de grandeur de plus qu'une rafale équivalente répartie sur quelques milliers de clés. Choisissez la clé sur la vraie frontière d'ordre dont vous avez besoin — un ID de commande, un ID d'appareil — jamais sur le système entier."
+          }
+        },
+        {
+          "type": "tip",
+          "body": {
+            "en": "Cost and quota gotchas cluster around volume and retry loops: Pub/Sub bills per message with a minimum billable size (roughly 1 KB), so millions of tiny heartbeat messages cost as if each were padded to that floor; Cloud Tasks and Scheduler both have per-project dispatch quotas that a misconfigured tight retry (every few seconds, indefinitely) can exhaust well before the actual incident is fixed; Workflows bills per step executed, so a loop of N iterations calling three steps each is 3N billed steps, not \"one workflow run\" — read the pricing model before assuming a pattern is free.",
+            "fr": "Les pièges de coût et de quota se concentrent autour du volume et des boucles de retry : Pub/Sub facture par message avec une taille minimale facturable (environ 1 Ko), donc des millions de petits messages de heartbeat coûtent comme si chacun était rembourré jusqu'à ce plancher ; Cloud Tasks et Scheduler ont tous deux des quotas de dispatch par projet qu'un retry mal configuré et trop serré (toutes les quelques secondes, indéfiniment) peut épuiser bien avant que l'incident réel ne soit résolu ; Workflows facture par étape exécutée, donc une boucle de N itérations appelant trois étapes chacune représente 3N étapes facturées, pas « une exécution de workflow » — lisez le modèle tarifaire avant de supposer qu'un motif est gratuit."
+          }
+        }
+      ]
+    }
+  ],
+  "flashcards": [
+    {
+      "id": "fc-serverless-messaging-push-vs-pull",
+      "front": {
+        "en": "Pub/Sub push vs pull: who calls whom, and who owns retry semantics?",
+        "fr": "Pub/Sub push vs pull : qui appelle qui, et qui porte la sémantique de retry ?"
+      },
+      "back": {
+        "en": "Pull: your consumer calls the API and controls its own rate — the default for backend workers. Push: Pub/Sub calls your HTTPS endpoint directly; a 2xx acks the message, anything else or a timeout triggers redelivery, so your endpoint implicitly owns retry behavior.",
+        "fr": "Pull : votre consommateur appelle l'API et contrôle son propre rythme — le défaut pour les workers backend. Push : Pub/Sub appelle directement votre endpoint HTTPS ; un 2xx acquitte le message, tout le reste ou un timeout déclenche une redélivrance — votre endpoint porte donc implicitement le comportement de retry."
+      }
+    },
+    {
+      "id": "fc-serverless-messaging-ordering-keys",
+      "front": {
+        "en": "What do ordering keys actually guarantee on a Pub/Sub subscription, and what do they cost you if misused?",
+        "fr": "Que garantissent réellement les ordering keys sur un abonnement Pub/Sub, et que coûtent-elles si mal utilisées ?"
+      },
+      "back": {
+        "en": "Strict FIFO delivery, but only among messages sharing the same key — different keys still parallelize. Message ordering must be explicitly enabled on the subscription; giving every message the same key serializes your entire traffic to one in-flight message at a time.",
+        "fr": "Une livraison FIFO stricte, mais uniquement entre messages partageant la même clé — des clés différentes se parallélisent toujours. Le message ordering doit être explicitement activé sur l'abonnement ; donner la même clé à tous les messages sérialise tout votre trafic à un seul message en vol à la fois."
+      }
+    },
+    {
+      "id": "fc-serverless-messaging-dead-letter",
+      "front": {
+        "en": "When does Pub/Sub forward a message to a dead-letter topic?",
+        "fr": "Quand Pub/Sub transfère-t-il un message vers un dead-letter topic ?"
+      },
+      "back": {
+        "en": "After max-delivery-attempts is exhausted (repeated nacks or ack-deadline expiries) — instead of retrying a poison message forever and starving throughput, it's forwarded to a topic you designate for inspection or separate handling.",
+        "fr": "Une fois max-delivery-attempts épuisé (nacks répétés ou expirations d'ack-deadline) — plutôt que de retenter indéfiniment un message empoisonné et d'asphyxier le débit, il est transféré vers un topic que vous désignez, pour inspection ou traitement séparé."
+      }
+    },
+    {
+      "id": "fc-serverless-messaging-retention-seek",
+      "front": {
+        "en": "What is Pub/Sub seek, and what problem does it solve that re-publishing doesn't?",
+        "fr": "Qu'est-ce que le seek Pub/Sub, et quel problème résout-il qu'une republication ne résout pas ?"
+      },
+      "back": {
+        "en": "Seek rewinds a subscription's cursor to a timestamp or a snapshot, replaying already-retained messages (retained up to 7 days by default, configurable) in their original form — a legitimate incident-recovery tool, unlike re-publishing which creates new messages with new IDs and no ordering guarantee against the original stream.",
+        "fr": "Seek rembobine le curseur d'un abonnement vers un timestamp ou un snapshot, rejouant des messages déjà conservés (retenus jusqu'à 7 jours par défaut, configurable) sous leur forme d'origine — un outil légitime de récupération d'incident, contrairement à la republication qui crée de nouveaux messages avec de nouveaux ID et aucune garantie d'ordre par rapport au flux d'origine."
+      }
+    },
+    {
+      "id": "fc-serverless-messaging-at-least-once",
+      "front": {
+        "en": "Why can a Pub/Sub message redeliver even after your handler successfully processed and acked it?",
+        "fr": "Pourquoi un message Pub/Sub peut-il être redélivré même après que votre handler l'a traité et acquitté avec succès ?"
+      },
+      "back": {
+        "en": "At-least-once is the contract, not a bug: the ack can land microseconds after the deadline expires, or the process can crash between finishing work and sending the ack. Handlers must be idempotent regardless of how reliable the ack path looks in testing.",
+        "fr": "At-least-once est le contrat, pas un bug : l'ack peut arriver quelques microsecondes après l'expiration du deadline, ou le processus peut planter entre la fin du traitement et l'envoi de l'ack. Les handlers doivent être idempotents, quelle que soit la fiabilité apparente du chemin d'ack en test."
+      }
+    },
+    {
+      "id": "fc-serverless-messaging-eventarc-role",
+      "front": {
+        "en": "What problem does Eventarc solve that existed before it?",
+        "fr": "Quel problème Eventarc résout-il, qui existait avant lui ?"
+      },
+      "back": {
+        "en": "Before Eventarc, every GCP service invented its own trigger plumbing. Eventarc normalizes events from dozens of sources (plus custom ones) into CloudEvents and gives one trigger resource, one IAM pattern, and one filter syntax, regardless of the source or the target (Cloud Run, GKE, Workflows, Cloud Run functions).",
+        "fr": "Avant Eventarc, chaque service GCP inventait sa propre plomberie de déclenchement. Eventarc normalise les événements de dizaines de sources (plus les sources personnalisées) au format CloudEvents et offre une seule ressource trigger, un seul schéma IAM et une seule syntaxe de filtre, quels que soient la source ou la cible (Cloud Run, GKE, Workflows, Cloud Run functions)."
+      }
+    },
+    {
+      "id": "fc-serverless-messaging-eventarc-transport",
+      "front": {
+        "en": "Direct events vs Pub/Sub-transport triggers in Eventarc: when do you pick the latter on purpose?",
+        "fr": "Événements directs vs triggers à transport Pub/Sub dans Eventarc : quand choisit-on volontairement les seconds ?"
+      },
+      "back": {
+        "en": "A handful of sources support lower-latency direct events. Pick Pub/Sub-transport explicitly when you want visibility and control of the underlying topic yourself — a custom retry policy, your own dead-letter topic, or fan-out to a second subscriber Eventarc doesn't manage.",
+        "fr": "Une poignée de sources supportent des événements directs à plus faible latence. Choisissez explicitement le transport Pub/Sub quand vous voulez voir et contrôler vous-même le topic sous-jacent — une politique de retry personnalisée, votre propre dead-letter topic, ou un fan-out vers un second abonné qu'Eventarc ne gère pas."
+      }
+    },
+    {
+      "id": "fc-serverless-messaging-eventarc-audit-logs",
+      "front": {
+        "en": "An Eventarc trigger on an audit-log event source shows ACTIVE with a correct filter but never fires. Most likely cause?",
+        "fr": "Un trigger Eventarc sur une source d'audit log affiche ACTIVE avec un filtre correct mais ne se déclenche jamais. Cause la plus probable ?"
+      },
+      "back": {
+        "en": "Data Access audit logs — which cover most read/write API calls — are off by default for most services (unlike Admin Activity logs, which are always on) and must be explicitly enabled and billed for. Missing that config is the classic silent-failure cause, not a broken trigger.",
+        "fr": "Les Data Access audit logs — qui couvrent la plupart des appels API de lecture/écriture — sont désactivés par défaut pour la plupart des services (contrairement aux Admin Activity logs, toujours actifs) et doivent être explicitement activés et facturés. Cette configuration manquante est la cause classique d'échec silencieux, pas un trigger cassé."
+      }
+    },
+    {
+      "id": "fc-serverless-messaging-tasks-vs-pubsub",
+      "front": {
+        "en": "Core structural difference between a Cloud Tasks queue and a Pub/Sub topic?",
+        "fr": "Différence structurelle fondamentale entre une file Cloud Tasks et un topic Pub/Sub ?"
+      },
+      "back": {
+        "en": "A task targets exactly one HTTP(S)/App Engine endpoint you name per task — no subscribers, no fan-out. A Pub/Sub topic can have many independent subscriptions, each getting a full copy of every message. Tasks decouples one deferred call; Pub/Sub broadcasts a fact.",
+        "fr": "Une tâche cible exactement un endpoint HTTP(S)/App Engine que vous nommez par tâche — pas d'abonnés, pas de fan-out. Un topic Pub/Sub peut avoir de nombreux abonnements indépendants, chacun recevant une copie complète de chaque message. Tasks découple un appel différé unique ; Pub/Sub diffuse un fait."
+      }
+    },
+    {
+      "id": "fc-serverless-messaging-tasks-rate-retry",
+      "front": {
+        "en": "Where do rate limiting and retry policy live for a Cloud Tasks queue, and why does that matter?",
+        "fr": "Où vivent le rate limiting et la politique de retry d'une file Cloud Tasks, et pourquoi cela compte-t-il ?"
+      },
+      "back": {
+        "en": "Both are queue-level, not caller-level: max-dispatches-per-second and max-concurrent-dispatches throttle calls to a fragile downstream regardless of enqueue burst size, and min/max backoff plus max-attempts control retries with exponential backoff and jitter applied automatically — tune against the downstream's real recovery time.",
+        "fr": "Les deux sont au niveau de la file, pas de l'appelant : max-dispatches-per-second et max-concurrent-dispatches brident les appels vers un aval fragile quelle que soit la taille de la rafale empilée, et backoff min/max plus max-attempts contrôlent les retries avec backoff exponentiel et jitter appliqués automatiquement — réglez sur le vrai temps de reprise de l'aval."
+      }
+    },
+    {
+      "id": "fc-serverless-messaging-tasks-schedule-time",
+      "front": {
+        "en": "How do you make a Cloud Task fire in exactly 3 hours, and why not use Cloud Scheduler for that?",
+        "fr": "Comment faire déclencher une Cloud Task dans exactement 3 heures, et pourquoi ne pas utiliser Cloud Scheduler pour cela ?"
+      },
+      "back": {
+        "en": "Set schedule_time on the task itself — a native field, one API call. Cloud Scheduler is for recurring cron-like triggers, not a one-off delay tied to a specific business event; reaching for it here adds a job you'd need to manage and clean up.",
+        "fr": "Définissez schedule_time sur la tâche elle-même — un champ natif, un seul appel API. Cloud Scheduler sert aux déclencheurs récurrents façon cron, pas à un délai ponctuel lié à un événement métier précis ; y recourir ici ajoute un job qu'il faudrait gérer et nettoyer."
+      }
+    },
+    {
+      "id": "fc-serverless-messaging-scheduler-targets",
+      "front": {
+        "en": "What targets can a Cloud Scheduler job call, and what does it not know how to do?",
+        "fr": "Quelles cibles un job Cloud Scheduler peut-il appeler, et que ne sait-il pas faire ?"
+      },
+      "back": {
+        "en": "HTTP(S) endpoints, Pub/Sub topics, and App Engine services, on a unix-cron schedule with its own retry config. It cannot branch, sequence multiple steps, or carry state between runs — that orchestration logic belongs in Workflows, called as the target.",
+        "fr": "Des endpoints HTTP(S), des topics Pub/Sub, et des services App Engine, selon un planning unix-cron avec sa propre configuration de retry. Il ne peut ni brancher, ni enchaîner plusieurs étapes, ni porter d'état entre exécutions — cette logique d'orchestration relève de Workflows, appelé comme cible."
+      }
+    },
+    {
+      "id": "fc-serverless-messaging-workflows-vs-composer",
+      "front": {
+        "en": "Workflows vs Composer (managed Airflow): where's the line?",
+        "fr": "Workflows vs Composer (Airflow managé) : où est la frontière ?"
+      },
+      "back": {
+        "en": "Workflows: lightweight API orchestration in seconds-to-minutes, billed per step, no scheduler infrastructure. Composer: data-pipeline orchestration with complex DAGs, backfills, sensors, and cross-run dependencies for long-running batch jobs. A nightly ETL DAG in Workflows works until you need Airflow-grade backfill or lineage tooling.",
+        "fr": "Workflows : orchestration d'API légère, en secondes ou minutes, facturée par étape, sans infrastructure d'ordonnanceur. Composer : orchestration de pipelines de données avec DAG complexes, backfills, sensors et dépendances entre exécutions pour des jobs batch longue durée. Un DAG ETL nocturne dans Workflows fonctionne jusqu'à ce qu'il faille un outillage de backfill ou de traçabilité façon Airflow."
+      }
+    },
+    {
+      "id": "fc-serverless-messaging-decision-glue",
+      "front": {
+        "en": "One-line decision tree: Pub/Sub, Eventarc, Cloud Tasks, Scheduler, Workflows — pick by need.",
+        "fr": "Arbre de décision en une ligne : Pub/Sub, Eventarc, Cloud Tasks, Scheduler, Workflows — choisir selon le besoin."
+      },
+      "back": {
+        "en": "Fan out one event to N independent consumers → Pub/Sub. Route a GCP/custom event to a target → Eventarc. A single deferred rate-controlled HTTP call → Cloud Tasks. A time-based trigger → Scheduler. A branching sequence of API calls → Workflows. Real systems chain several of these.",
+        "fr": "Diffuser un événement à N consommateurs indépendants → Pub/Sub. Router un événement GCP/personnalisé vers une cible → Eventarc. Un unique appel HTTP différé et à débit contrôlé → Cloud Tasks. Un déclencheur temporel → Scheduler. Une séquence d'appels API avec branchements → Workflows. Les systèmes réels enchaînent plusieurs de ces briques."
+      }
+    }
+  ],
+  "exercises": [
+    {
+      "id": "ex-serverless-messaging-fanout-choice",
+      "kind": "mcq",
+      "prompt": {
+        "en": "A new order event needs to reach the invoicing service and the analytics pipeline today, and product wants to add a loyalty-points service and a fraud-check service next quarter without touching the order-creation code again. Best fit?",
+        "fr": "Un nouvel événement de commande doit atteindre le service de facturation et le pipeline analytique dès aujourd'hui, et le produit veut ajouter un service de points de fidélité puis un service anti-fraude le trimestre prochain sans retoucher le code de création de commande. Meilleur choix ?"
+      },
+      "choices": [
+        {
+          "id": "a",
+          "label": {
+            "en": "A Pub/Sub topic with one subscription per consumer",
+            "fr": "Un topic Pub/Sub avec un abonnement par consommateur"
+          }
+        },
+        {
+          "id": "b",
+          "label": {
+            "en": "A Cloud Tasks queue with one task created per known consumer",
+            "fr": "Une file Cloud Tasks avec une tâche créée par consommateur connu"
+          }
+        },
+        {
+          "id": "c",
+          "label": {
+            "en": "A Cloud Scheduler job polling the orders table every minute",
+            "fr": "Un job Cloud Scheduler qui sonde la table des commandes chaque minute"
+          }
+        },
+        {
+          "id": "d",
+          "label": {
+            "en": "A single Eventarc trigger pointing at all four services",
+            "fr": "Un unique trigger Eventarc pointant vers les quatre services"
+          }
+        }
+      ],
+      "answerId": "a",
+      "explanation": {
+        "en": "Pub/Sub is built for exactly this shape: publishers stay ignorant of subscribers, and adding a consumer later is just a new subscription on the same topic, zero changes upstream. Cloud Tasks would require the order-creation code to know about and enqueue a task per consumer, defeating the goal; Scheduler is time-based polling, not event-driven; a single Eventarc trigger still needs one trigger per destination and doesn't remove the coupling problem — it just relocates it.",
+        "fr": "Pub/Sub est conçu exactement pour ce schéma : les producteurs restent ignorants des abonnés, et ajouter un consommateur plus tard n'est qu'un nouvel abonnement sur le même topic, zéro changement en amont. Cloud Tasks exigerait que le code de création de commande connaisse et empile une tâche par consommateur, ce qui va à l'encontre du but ; Scheduler est du sondage temporel, pas de l'événementiel ; un unique trigger Eventarc a quand même besoin d'un trigger par destination et ne supprime pas le problème de couplage — il le déplace simplement."
+      },
+      "difficulty": 2
+    },
+    {
+      "id": "ex-serverless-messaging-ordering-hotspot",
+      "kind": "find-bug",
+      "prompt": {
+        "en": "Throughput collapses from ~2000 msg/s to ~15 msg/s the moment message ordering is turned on for this high-volume order-events publisher, even though 40 consumer instances are running. Find the bug.",
+        "fr": "Le débit s'effondre de ~2000 msg/s à ~15 msg/s dès que le message ordering est activé pour ce producteur d'événements de commande à fort volume, alors même que 40 instances consommatrices tournent. Trouvez le bug."
+      },
+      "code": "def publish_order(order):\n    future = publisher.publish(\n        topic_path,\n        data=order.to_json().encode(\"utf-8\"),\n        ordering_key=\"orders\",\n    )\n    return future.result()",
+      "choices": [
+        {
+          "id": "a",
+          "label": {
+            "en": "publisher.publish should not call .result() synchronously",
+            "fr": "publisher.publish ne devrait pas appeler .result() de façon synchrone"
+          }
+        },
+        {
+          "id": "b",
+          "label": {
+            "en": "ordering_key=\"orders\" is the same constant for every message, so the whole topic serializes into one in-flight message at a time",
+            "fr": "ordering_key=\"orders\" est la même constante pour chaque message, donc tout le topic se sérialise en un seul message en vol à la fois"
+          }
+        },
+        {
+          "id": "c",
+          "label": {
+            "en": "message ordering requires a pull subscription, not push",
+            "fr": "le message ordering exige un abonnement pull, pas push"
+          }
+        },
+        {
+          "id": "d",
+          "label": {
+            "en": "topic_path must include the ordering key in its name",
+            "fr": "topic_path doit inclure l'ordering key dans son nom"
+          }
+        }
+      ],
+      "answerId": "b",
+      "explanation": {
+        "en": "Ordering keys guarantee FIFO only within a key, but Pub/Sub also serializes delivery of a given key to one outstanding message at a time regardless of consumer count. A single constant key means every message in the topic effectively queues behind the previous one — 40 consumers can't help because only one message per key is ever in flight. The fix is keying on the real ordering boundary (e.g. order_id or customer_id), letting distinct keys parallelize across consumers. Calling .result() synchronously does hurt publish latency but wouldn't cause this scale of collapse, and message ordering works with both push and pull.",
+        "fr": "Les ordering keys garantissent le FIFO uniquement au sein d'une même clé, mais Pub/Sub sérialise aussi la livraison d'une clé donnée à un seul message en vol à la fois, quel que soit le nombre de consommateurs. Une clé constante unique signifie que chaque message du topic se met en fait en file derrière le précédent — 40 consommateurs n'aident en rien car un seul message par clé est jamais en vol. La correction consiste à choisir la clé sur la vraie frontière d'ordre (par ex. order_id ou customer_id), ce qui permet à des clés distinctes de se paralléliser entre consommateurs. Appeler .result() de façon synchrone nuit à la latence de publication mais ne causerait pas un effondrement de cette ampleur, et le message ordering fonctionne aussi bien en push qu'en pull."
+      },
+      "difficulty": 2
+    },
+    {
+      "id": "ex-serverless-messaging-ack-deadline",
+      "kind": "predict-output",
+      "prompt": {
+        "en": "This push subscription handler synchronously does ~15 seconds of work before responding. The subscription was created with default settings (10-second ack deadline, no deadline extension logic in the handler). What actually happens under normal load?",
+        "fr": "Ce handler d'abonnement push fait environ 15 secondes de travail synchrone avant de répondre. L'abonnement a été créé avec les réglages par défaut (ack deadline de 10 secondes, aucune logique d'extension de deadline dans le handler). Que se passe-t-il réellement en charge normale ?"
+      },
+      "code": "app.post('/pubsub-push', async (req, res) => {\n  const message = req.body.message;\n  await heavyReconciliation(message.data); // ~15s\n  res.status(200).send();\n});",
+      "choices": [
+        {
+          "id": "a",
+          "label": {
+            "en": "Pub/Sub waits patiently for however long the handler needs before considering redelivery",
+            "fr": "Pub/Sub attend patiemment le temps nécessaire au handler avant d'envisager une redélivrance"
+          }
+        },
+        {
+          "id": "b",
+          "label": {
+            "en": "The message is very likely redelivered around the 10s mark while heavyReconciliation is still running, producing a duplicate invocation before the first one even finishes",
+            "fr": "Le message est très probablement redélivré vers la 10e seconde pendant que heavyReconciliation tourne encore, produisant une invocation en double avant même que la première ne se termine"
+          }
+        },
+        {
+          "id": "c",
+          "label": {
+            "en": "Pub/Sub extends the ack deadline automatically to match the handler's actual runtime",
+            "fr": "Pub/Sub étend automatiquement l'ack deadline pour correspondre au temps réel d'exécution du handler"
+          }
+        },
+        {
+          "id": "d",
+          "label": {
+            "en": "The subscription enters an error state and stops delivering entirely",
+            "fr": "L'abonnement entre dans un état d'erreur et arrête complètement de livrer"
+          }
+        }
+      ],
+      "answerId": "b",
+      "explanation": {
+        "en": "The ack deadline (10s by default) is the window Pub/Sub waits before assuming delivery failed and redelivering — it is not extended automatically just because your handler is still busy; the client library can extend it (modifyAckDeadline) but only if you're using the client-managed pull flow with that logic wired in, not a bare push endpoint. A 15s handler against a 10s deadline means duplicate deliveries are the expected outcome, not an edge case, which is exactly why push handlers must be both fast (or ack early) and idempotent.",
+        "fr": "L'ack deadline (10 s par défaut) est la fenêtre pendant laquelle Pub/Sub attend avant de supposer que la livraison a échoué et de redélivrer — elle ne s'étend pas automatiquement juste parce que votre handler est encore occupé ; la bibliothèque cliente peut l'étendre (modifyAckDeadline), mais seulement si vous utilisez le flux pull géré côté client avec cette logique câblée, pas un simple endpoint push. Un handler de 15 s contre un deadline de 10 s signifie que des livraisons en double sont le résultat attendu, pas un cas limite — c'est exactement pourquoi les handlers push doivent être à la fois rapides (ou acquitter tôt) et idempotents."
+      },
+      "difficulty": 2
+    },
+    {
+      "id": "ex-serverless-messaging-audit-logs-trigger",
+      "kind": "mcq",
+      "prompt": {
+        "en": "An Eventarc trigger watching Cloud SQL admin API calls via Cloud Audit Logs shows ACTIVE, the event filter matches the right method name, and the queries it should catch are running constantly — yet the destination Cloud Run service never receives anything. Most likely cause?",
+        "fr": "Un trigger Eventarc qui surveille des appels d'API admin Cloud SQL via Cloud Audit Logs affiche ACTIVE, le filtre d'événement correspond au bon nom de méthode, et les requêtes qu'il devrait capter s'exécutent en permanence — pourtant le service Cloud Run destinataire ne reçoit jamais rien. Cause la plus probable ?"
+      },
+      "choices": [
+        {
+          "id": "a",
+          "label": {
+            "en": "Data Access audit logs aren't enabled for that service in this project",
+            "fr": "Les Data Access audit logs ne sont pas activés pour ce service dans ce projet"
+          }
+        },
+        {
+          "id": "b",
+          "label": {
+            "en": "Eventarc cannot target Cloud Run services, only GKE",
+            "fr": "Eventarc ne peut pas cibler des services Cloud Run, seulement GKE"
+          }
+        },
+        {
+          "id": "c",
+          "label": {
+            "en": "The trigger needs to be recreated every 24 hours",
+            "fr": "Le trigger doit être recréé toutes les 24 heures"
+          }
+        },
+        {
+          "id": "d",
+          "label": {
+            "en": "Audit-log triggers only support Cloud Storage as a source",
+            "fr": "Les triggers sur audit log ne supportent que Cloud Storage comme source"
+          }
+        }
+      ],
+      "answerId": "a",
+      "explanation": {
+        "en": "Admin Activity logs are on by default, but Data Access logs — which cover the read/write API calls most audit-log-based triggers actually watch — are off by default for most services and must be explicitly enabled (and are billed once turned on). A trigger that is well-formed but silent is, far more often than not, missing that logging configuration rather than being broken. Eventarc supports Cloud Run, GKE and Workflows as destinations, and triggers don't expire or need periodic recreation.",
+        "fr": "Les Admin Activity logs sont activés par défaut, mais les Data Access logs — qui couvrent les appels API de lecture/écriture que la plupart des triggers sur audit log surveillent réellement — sont désactivés par défaut pour la majorité des services et doivent être explicitement activés (et facturés une fois activés). Un trigger bien formé mais silencieux, c'est très majoritairement cette configuration de logging manquante, pas un trigger cassé. Eventarc supporte Cloud Run, GKE et Workflows comme destinations, et les triggers n'expirent pas et n'ont pas besoin d'être recréés périodiquement."
+      },
+      "difficulty": 1
+    },
+    {
+      "id": "ex-serverless-messaging-dlq-permissions",
+      "kind": "find-bug",
+      "prompt": {
+        "en": "A subscription has a dead-letter policy configured, but messages that clearly exhaust their delivery attempts never show up in the dead-letter topic — they just disappear after the retention window instead. The dead-letter topic and its own subscription both exist. Find the bug.",
+        "fr": "Un abonnement a une politique de dead-letter configurée, mais les messages qui épuisent clairement leurs tentatives de livraison n'apparaissent jamais dans le dead-letter topic — ils disparaissent simplement après la fenêtre de rétention. Le dead-letter topic et son propre abonnement existent tous les deux. Trouvez le bug."
+      },
+      "code": "# Created manually via the Pub/Sub API (not gcloud/console)\nsubscription:\n  name: projects/my-app/subscriptions/orders-worker\n  topic: projects/my-app/topics/orders\n  deadLetterPolicy:\n    deadLetterTopic: projects/my-app/topics/orders-dlq\n    maxDeliveryAttempts: 5\n  # no additional IAM changes made",
+      "choices": [
+        {
+          "id": "a",
+          "label": {
+            "en": "maxDeliveryAttempts=5 is below the platform minimum",
+            "fr": "maxDeliveryAttempts=5 est en dessous du minimum autorisé par la plateforme"
+          }
+        },
+        {
+          "id": "b",
+          "label": {
+            "en": "The Pub/Sub service agent lacks roles/pubsub.publisher on orders-dlq (and roles/pubsub.subscriber on orders-worker), grants that gcloud/console apply automatically but the API does not",
+            "fr": "L'agent de service Pub/Sub n'a pas roles/pubsub.publisher sur orders-dlq (ni roles/pubsub.subscriber sur orders-worker), des attributions que gcloud/la console appliquent automatiquement mais pas l'API"
+          }
+        },
+        {
+          "id": "c",
+          "label": {
+            "en": "A dead-letter topic must be in a different GCP project than the source subscription",
+            "fr": "Un dead-letter topic doit se trouver dans un projet GCP différent de l'abonnement source"
+          }
+        },
+        {
+          "id": "d",
+          "label": {
+            "en": "deadLetterPolicy is only honored on push subscriptions, not pull",
+            "fr": "deadLetterPolicy n'est honoré que sur les abonnements push, pas pull"
+          }
+        }
+      ],
+      "answerId": "b",
+      "explanation": {
+        "en": "Forwarding to a dead-letter topic requires the Pub/Sub service agent (service-{project-number}@gcp-sa-pubsub.iam.gserviceaccount.com) to hold roles/pubsub.publisher on the dead-letter topic and roles/pubsub.subscriber on the source subscription. gcloud and the console grant these automatically when you configure a dead-letter policy through them; calling the API directly does not, so forwarding silently fails and messages just expire at the end of the retention window instead of landing in the DLQ. maxDeliveryAttempts=5 is within the valid 5-100 range, there's no cross-project requirement, and dead-letter policies apply to both push and pull subscriptions.",
+        "fr": "Le transfert vers un dead-letter topic exige que l'agent de service Pub/Sub (service-{project-number}@gcp-sa-pubsub.iam.gserviceaccount.com) détienne roles/pubsub.publisher sur le dead-letter topic et roles/pubsub.subscriber sur l'abonnement source. gcloud et la console attribuent ces rôles automatiquement quand vous configurez une politique de dead-letter via eux ; appeler l'API directement ne le fait pas, donc le transfert échoue silencieusement et les messages expirent simplement en fin de fenêtre de rétention au lieu d'atterrir dans la DLQ. maxDeliveryAttempts=5 est dans la plage valide de 5 à 100, il n'y a pas d'exigence de projet différent, et les politiques de dead-letter s'appliquent aux abonnements push comme pull."
+      },
+      "difficulty": 3
+    },
+    {
+      "id": "ex-serverless-messaging-tasks-vs-pubsub-choice",
+      "kind": "mcq",
+      "prompt": {
+        "en": "You need to call your own /send-confirmation endpoint exactly once per order, rate-limited to 5 calls/second against a fragile downstream mailer, with automatic retry and backoff on failure. No other system needs to know this happened. Best fit?",
+        "fr": "Vous devez appeler votre propre endpoint /send-confirmation exactement une fois par commande, à un débit limité à 5 appels/seconde vers un service de mail fragile en aval, avec retry et backoff automatiques en cas d'échec. Aucun autre système n'a besoin de savoir que cela s'est produit. Meilleur choix ?"
+      },
+      "choices": [
+        {
+          "id": "a",
+          "label": {
+            "en": "A Pub/Sub topic with a single push subscription",
+            "fr": "Un topic Pub/Sub avec un unique abonnement push"
+          }
+        },
+        {
+          "id": "b",
+          "label": {
+            "en": "Cloud Tasks, with the queue's dispatch rate capped at 5/s",
+            "fr": "Cloud Tasks, avec le débit de dispatch de la file plafonné à 5/s"
+          }
+        },
+        {
+          "id": "c",
+          "label": {
+            "en": "Cloud Scheduler firing every 200ms",
+            "fr": "Cloud Scheduler se déclenchant toutes les 200 ms"
+          }
+        },
+        {
+          "id": "d",
+          "label": {
+            "en": "Eventarc with a custom event source",
+            "fr": "Eventarc avec une source d'événement personnalisée"
+          }
+        }
+      ],
+      "answerId": "b",
+      "explanation": {
+        "en": "This is the canonical Cloud Tasks shape: one known target, per-task control, and queue-level rate limiting that Pub/Sub subscriptions don't offer in the same way (Pub/Sub throttles at the consumer, not declaratively at the queue). A Pub/Sub push subscription could technically work but adds fan-out machinery for a single consumer that will never gain a second one; Cloud Scheduler is for recurring time-based triggers, not per-order dispatch; Eventarc is for routing GCP/custom events to a destination, not for rate-limited outbound calls you originate yourself.",
+        "fr": "C'est le schéma canonique de Cloud Tasks : une cible connue, un contrôle par tâche, et un rate limiting au niveau de la file que les abonnements Pub/Sub n'offrent pas de la même manière (Pub/Sub bride côté consommateur, pas de façon déclarative au niveau de la file). Un abonnement push Pub/Sub pourrait techniquement fonctionner mais ajoute une machinerie de fan-out pour un consommateur unique qui n'en gagnera jamais un second ; Cloud Scheduler sert aux déclencheurs temporels récurrents, pas au dispatch par commande ; Eventarc sert à router des événements GCP/personnalisés vers une destination, pas à des appels sortants limités en débit que vous initiez vous-même."
+      },
+      "difficulty": 1
+    },
+    {
+      "id": "ex-serverless-messaging-workflows-retry",
+      "kind": "predict-output",
+      "prompt": {
+        "en": "This Workflows step calls a partner endpoint that returns HTTP 503 on every single attempt. Given this retry block, how many total HTTP calls does Workflows make before failing the step?",
+        "fr": "Cette étape Workflows appelle un endpoint partenaire qui renvoie du HTTP 503 à chaque tentative. Avec ce bloc de retry, combien d'appels HTTP au total Workflows effectue-t-il avant de faire échouer l'étape ?"
+      },
+      "code": "- callPartner:\n    try:\n      call: http.get\n      args:\n        url: https://partner.example.com/status\n      result: apiResult\n    retry:\n      predicate: ${http.default_retry_predicate}\n      max_retries: 3\n      backoff:\n        initial_delay: 2\n        max_delay: 60\n        multiplier: 2",
+      "choices": [
+        {
+          "id": "a",
+          "label": {
+            "en": "3 total calls",
+            "fr": "3 appels au total"
+          }
+        },
+        {
+          "id": "b",
+          "label": {
+            "en": "4 total calls: the original attempt plus 3 retries",
+            "fr": "4 appels au total : la tentative initiale plus 3 retries"
+          }
+        },
+        {
+          "id": "c",
+          "label": {
+            "en": "1 call: max_retries only counts if the predicate is missing",
+            "fr": "1 appel : max_retries ne compte que si le predicate est absent"
+          }
+        },
+        {
+          "id": "d",
+          "label": {
+            "en": "Unlimited calls until max_delay is reached",
+            "fr": "Un nombre illimité d'appels jusqu'à atteindre max_delay"
+          }
+        }
+      ],
+      "answerId": "b",
+      "explanation": {
+        "en": "max_retries counts retries in addition to the original attempt, so a persistent 503 (which the default retry predicate treats as retryable) produces 1 initial call plus 3 retries = 4 total calls, with the delay growing 2s, 4s, 8s per the multiplier before the step is finally marked failed. Reading max_retries as the total call count is the most common off-by-one mistake when reasoning about Workflows retry blocks, and it matters directly for capacity planning against a downstream that's already struggling.",
+        "fr": "max_retries compte les retries en plus de la tentative initiale, donc un 503 persistant (que le predicate de retry par défaut traite comme retentable) produit 1 appel initial plus 3 retries = 4 appels au total, avec un délai croissant de 2 s, 4 s, 8 s selon le multiplicateur avant que l'étape ne soit finalement marquée en échec. Lire max_retries comme le nombre total d'appels est l'erreur de décalage d'un cran la plus courante en raisonnant sur les blocs de retry Workflows, et cela compte directement pour la planification de capacité face à un aval déjà en difficulté."
+      },
+      "difficulty": 2
+    },
+    {
+      "id": "ex-serverless-messaging-tiny-messages-cost",
+      "kind": "mcq",
+      "prompt": {
+        "en": "A fleet of 50,000 IoT devices publishes a 20-byte heartbeat to Pub/Sub every 10 seconds. Finance flags the Pub/Sub bill as far higher than the raw byte volume would suggest. What's actually going on?",
+        "fr": "Une flotte de 50 000 objets IoT publie un heartbeat de 20 octets vers Pub/Sub toutes les 10 secondes. La finance signale une facture Pub/Sub bien plus élevée que ce que le volume brut d'octets laisserait penser. Que se passe-t-il réellement ?"
+      },
+      "choices": [
+        {
+          "id": "a",
+          "label": {
+            "en": "Pub/Sub is misconfigured and should be billing near zero for such small payloads",
+            "fr": "Pub/Sub est mal configuré et devrait facturer presque rien pour des charges utiles aussi petites"
+          }
+        },
+        {
+          "id": "b",
+          "label": {
+            "en": "Pub/Sub bills per message against a minimum billable size (roughly 1 KB), so every 20-byte heartbeat is charged as if it were padded to that floor",
+            "fr": "Pub/Sub facture par message par rapport à une taille minimale facturable (environ 1 Ko), donc chaque heartbeat de 20 octets est facturé comme s'il était rembourré jusqu'à ce plancher"
+          }
+        },
+        {
+          "id": "c",
+          "label": {
+            "en": "Heartbeats must be routed through Cloud Tasks instead, which has no per-message minimum",
+            "fr": "Les heartbeats doivent être routés via Cloud Tasks à la place, qui n'a pas de minimum par message"
+          }
+        },
+        {
+          "id": "d",
+          "label": {
+            "en": "The bill reflects an unrelated egress charge, not message volume",
+            "fr": "La facture reflète des frais d'egress sans rapport, pas le volume de messages"
+          }
+        }
+      ],
+      "answerId": "b",
+      "explanation": {
+        "en": "Pub/Sub pricing has a minimum billable message size, so a stream of tiny messages costs proportionally far more than their real payload size — 50,000 devices × one heartbeat per 10s is 432 million messages/day, each billed at the floor regardless of being 20 bytes. This isn't a bug or a mispriced product, it's a direct consequence of message-count-driven billing; the fix is batching heartbeats client-side or lowering frequency, not switching transport — Cloud Tasks has its own per-operation costs and doesn't remove a per-unit floor problem, it just relocates it.",
+        "fr": "La tarification Pub/Sub comporte une taille minimale facturable par message, donc un flux de tout petits messages coûte proportionnellement bien plus que leur taille réelle de charge utile — 50 000 appareils × un heartbeat toutes les 10 s représente 432 millions de messages/jour, chacun facturé au plancher qu'il fasse 20 octets ou plus. Ce n'est ni un bug ni un produit mal tarifé, c'est une conséquence directe d'une facturation pilotée par le nombre de messages ; le correctif consiste à regrouper les heartbeats côté client ou à réduire la fréquence, pas à changer de transport — Cloud Tasks a ses propres coûts par opération et ne supprime pas un problème de plancher par unité, il le déplace simplement."
+      },
+      "difficulty": 3
+    }
+  ]
+}

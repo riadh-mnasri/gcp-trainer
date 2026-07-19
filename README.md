@@ -1,5 +1,12 @@
 # GcpTrainer
 
+[![Live on Vercel](https://img.shields.io/badge/live-gcp--trainer.vercel.app-black?logo=vercel&logoColor=white)](https://gcp-trainer.vercel.app)
+[![Next.js 16](https://img.shields.io/badge/Next.js-16-000000?logo=next.js&logoColor=white)](https://nextjs.org)
+[![React 19](https://img.shields.io/badge/React-19-149ECA?logo=react&logoColor=white)](https://react.dev)
+[![TypeScript](https://img.shields.io/badge/TypeScript-5-3178C6?logo=typescript&logoColor=white)](https://www.typescriptlang.org)
+[![Tests](https://img.shields.io/badge/tests-vitest-6E9F18?logo=vitest&logoColor=white)](#getting-started)
+[![License: all rights reserved](https://img.shields.io/badge/license-all%20rights%20reserved-lightgrey)](#license)
+
 Keep your GCP sharp. GcpTrainer is a bilingual (EN/FR) learning app that
 combines architect-level lessons, spaced repetition flashcards and
 hands-on exercises covering Google Cloud Platform, wrapped in a
@@ -9,6 +16,8 @@ heatmap) designed for short daily sessions.
 The content targets tech leads and freelancers: service landscape,
 architecture trade-offs and the gotchas that come up in real missions
 and interviews, rather than certification cramming.
+
+**Live app:** [gcp-trainer.vercel.app](https://gcp-trainer.vercel.app)
 
 Copyright (c) 2026 Riadh MNASRI. All rights reserved.
 
@@ -28,6 +37,16 @@ Copyright (c) 2026 Riadh MNASRI. All rights reserved.
 - **Cross-device sync**: offline-first localStorage, with optional
   passphrase-protected sync through a Postgres-backed API, so progress
   survives machine changes.
+
+## Tech stack
+
+- **Framework**: Next.js 16 (App Router, Turbopack) on React 19 and
+  TypeScript.
+- **Styling**: Tailwind CSS 4.
+- **Persistence**: localStorage offline-first, Neon Postgres (serverless
+  driver) for the optional cross-device sync API route.
+- **Testing**: Vitest, unit tests for the SRS and gamification engine.
+- **Deployment**: Vercel, deployed from `main` via GitHub integration.
 
 ## Getting started
 
@@ -102,6 +121,27 @@ another app:
    different identity.
 5. Adapt the content-update pipeline (see below) to the new topic's
    official sources.
+
+## Content status
+
+The GCP pack targets 12 modules; content is written incrementally.
+
+| Module | Status |
+| --- | --- |
+| Platform fundamentals | Available |
+| Compute options | Available |
+| Storage | Planned |
+| Databases | Planned |
+| Networking | Planned |
+| IAM & security | Planned |
+| Data & analytics | Planned |
+| Messaging & eventing | Planned |
+| Observability & SRE | Planned |
+| DevOps & IaC | Planned |
+| ML & AI | Planned |
+| What's new on GCP | Planned |
+
+See `content/packs/gcp/pack.json` for the source of truth.
 
 ## Keeping content up to date
 

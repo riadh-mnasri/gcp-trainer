@@ -1,0 +1,755 @@
+{
+  "id": "iam-security",
+  "title": { "en": "IAM & security", "fr": "IAM & sécurité" },
+  "tagline": {
+    "en": "IAM, service accounts, KMS, Secret Manager",
+    "fr": "IAM, comptes de service, KMS, Secret Manager"
+  },
+  "icon": "🔐",
+  "lessons": [
+    {
+      "id": "iam-security-model",
+      "title": {
+        "en": "The IAM model: hierarchy, roles, conditions, deny",
+        "fr": "Le modèle IAM : hiérarchie, rôles, conditions, deny"
+      },
+      "minutes": 5,
+      "blocks": [
+        {
+          "type": "text",
+          "body": {
+            "en": "IAM allow policies attach to nodes of the resource hierarchy (organization → folder → project → resource) and inherit strictly downward: a binding at the folder applies to every project and resource beneath it, with no way to revoke it lower in the tree. Effective permissions at any resource are the union of every allow binding found at that resource and at all its ancestors — there is no \"subtract\" operation on allow policies, only addition.",
+            "fr": "Les politiques d'autorisation IAM s'attachent aux nœuds de la hiérarchie de ressources (organisation → dossier → projet → ressource) et héritent strictement vers le bas : un binding posé sur un dossier s'applique à tous les projets et ressources en dessous, sans possibilité de le révoquer plus bas dans l'arbre. Les permissions effectives sur une ressource sont l'union de tous les bindings d'autorisation trouvés sur cette ressource et sur tous ses ancêtres — il n'existe aucune opération de « soustraction » sur les politiques d'autorisation, seulement de l'addition."
+          }
+        },
+        {
+          "type": "text",
+          "body": {
+            "en": "Role types trade granularity for maintenance cost. Basic roles (Owner, Editor, Viewer) predate fine-grained IAM and grant thousands of permissions across every service — fine for a sandbox, a liability in production. Predefined roles are curated per service (roles/compute.instanceAdmin, roles/storage.objectViewer) and are Google's maintained answer to least privilege; custom roles let you assemble an exact permission set but you then own tracking every new permission Google ships that should or shouldn't be added. Default to predefined roles scoped as low in the hierarchy as the workload allows; reach for custom roles only when no predefined role is close enough.",
+            "fr": "Les types de rôles échangent la granularité contre un coût de maintenance. Les rôles basiques (Owner, Editor, Viewer) précèdent l'IAM fin et accordent des milliers de permissions sur tous les services — acceptable en bac à sable, une faute en production. Les rôles prédéfinis sont curatés par service (roles/compute.instanceAdmin, roles/storage.objectViewer) et constituent la réponse maintenue par Google au moindre privilège ; les rôles personnalisés permettent d'assembler un ensemble exact de permissions, mais vous héritez alors de la charge de suivre chaque nouvelle permission que Google ajoute et qui devrait ou non y figurer. Par défaut, préférez des rôles prédéfinis posés au plus bas niveau de la hiérarchie que la charge de travail tolère ; ne créez un rôle personnalisé que si aucun rôle prédéfini n'approche suffisamment le besoin."
+          }
+        },
+        {
+          "type": "code",
+          "code": "# Grant access to a bucket, but only for 90 days and only for objects\n# tagged \"draft\" - an IAM Condition scopes the binding beyond role + member\ngcloud projects add-iam-policy-binding my-project \\\n  --member=\"user:contractor@partner.com\" \\\n  --role=\"roles/storage.objectViewer\" \\\n  --condition='expression=request.time < timestamp(\"2026-10-19T00:00:00Z\"),title=contractor-90-days'",
+          "caption": {
+            "en": "IAM Conditions add a CEL expression to a binding: time-bound, resource-name-bound, or type-bound access.",
+            "fr": "Les IAM Conditions ajoutent une expression CEL à un binding : accès borné dans le temps, par nom de ressource, ou par type."
+          }
+        },
+        {
+          "type": "gotcha",
+          "body": {
+            "en": "\"We removed the role at the project, access should be gone\" is the single most common IAM debugging trap: if that same role (or a broader one) is still bound at the folder or organization above, the grant is still fully in effect, because allow policies only add up. The tool for this is the Policy Troubleshooter or Policy Analyzer, not staring at one project's bindings in isolation — effective access always requires walking the whole ancestor chain.",
+            "fr": "« On a retiré le rôle au niveau du projet, l'accès devrait avoir disparu » est le piège de débogage IAM le plus fréquent : si ce même rôle (ou un rôle plus large) reste lié au dossier ou à l'organisation au-dessus, l'octroi reste pleinement effectif, car les politiques d'autorisation ne font que s'additionner. L'outil adapté est le Policy Troubleshooter ou le Policy Analyzer, pas l'inspection isolée des bindings d'un seul projet — l'accès effectif exige toujours de remonter toute la chaîne d'ancêtres."
+          }
+        },
+        {
+          "type": "tip",
+          "body": {
+            "en": "Deny policies are the escape hatch when the additive allow model cannot express \"nobody, ever, no matter what role they hold\": they evaluate independently and always win over any allow binding, including inherited ones and even Owner. Use them sparingly, as org-level guardrails (e.g. deny external IP creation, deny primitive role assignment) rather than as day-to-day access control, which stays IAM's job.",
+            "fr": "Les politiques de refus (deny) sont l'échappatoire quand le modèle additif des autorisations ne peut exprimer « personne, jamais, quel que soit le rôle détenu » : elles s'évaluent indépendamment et l'emportent toujours sur tout binding d'autorisation, y compris hérité, y compris Owner. Utilisez-les avec parcimonie, comme garde-fous au niveau de l'organisation (par ex. interdire la création d'IP externes, interdire l'attribution de rôles primitifs) plutôt que pour le contrôle d'accès quotidien, qui reste le rôle d'IAM."
+          }
+        }
+      ]
+    },
+    {
+      "id": "iam-security-service-accounts",
+      "title": {
+        "en": "Service accounts: keys, Workload Identity Federation, impersonation",
+        "fr": "Comptes de service : clés, Workload Identity Federation, impersonation"
+      },
+      "minutes": 5,
+      "blocks": [
+        {
+          "type": "text",
+          "body": {
+            "en": "Every project gets default service accounts (the Compute Engine default SA, historically the App Engine default SA) that were, for years, auto-granted the project Editor role — an identity any code running on any VM or any deployed function could silently inherit. User-managed service accounts, created one per workload with only the roles that workload needs, are the correct baseline; disabling or tightly scoping the default SAs is a standard hardening step teams forget until an audit flags an Editor-scoped identity nobody remembers creating.",
+            "fr": "Chaque projet reçoit des comptes de service par défaut (le SA par défaut de Compute Engine, historiquement celui d'App Engine) qui, pendant des années, se sont vu octroyer automatiquement le rôle Editor du projet — une identité que tout code tournant sur n'importe quelle VM ou fonction déployée pouvait hériter silencieusement. Les comptes de service gérés par l'utilisateur, créés un par charge de travail avec seulement les rôles nécessaires, constituent la base correcte ; désactiver ou restreindre fortement les SA par défaut est une étape de durcissement standard que les équipes oublient jusqu'à ce qu'un audit signale une identité scope Editor que personne ne se souvient d'avoir créée."
+          }
+        },
+        {
+          "type": "text",
+          "body": {
+            "en": "Exported JSON keys are long-lived bearer secrets: they never expire on their own, end up in repos, CI logs and laptop backups, and an org policy constraint (iam.disableServiceAccountKeyCreation) exists precisely to stop teams from minting them. The keyless alternatives are Workload Identity Federation, which lets an external identity provider (AWS, Azure AD, a GitHub Actions OIDC token, an on-prem IdP) exchange its own short-lived token for GCP credentials with zero secret ever stored, and service account impersonation, where a human or another service account with roles/iam.serviceAccountTokenCreator borrows a target SA's identity for a short-lived token on demand.",
+            "fr": "Les clés JSON exportées sont des secrets porteurs longue durée : elles n'expirent jamais d'elles-mêmes, finissent dans des dépôts, des logs CI et des sauvegardes de portable, et une contrainte d'org policy (iam.disableServiceAccountKeyCreation) existe précisément pour empêcher les équipes d'en générer. Les alternatives sans clé sont la Workload Identity Federation, qui permet à un fournisseur d'identité externe (AWS, Azure AD, un jeton OIDC de GitHub Actions, un IdP on-prem) d'échanger son propre jeton éphémère contre des identifiants GCP sans qu'aucun secret ne soit jamais stocké, et l'impersonation de compte de service, où un humain ou un autre compte de service disposant de roles/iam.serviceAccountTokenCreator emprunte à la demande l'identité d'un SA cible pour un jeton de courte durée."
+          }
+        },
+        {
+          "type": "code",
+          "code": "# Local development without ever downloading a key: impersonate the SA\n# the workload will actually run as in production\ngcloud auth application-default login \\\n  --impersonate-service-account=api-runtime@my-app.iam.gserviceaccount.com\n\n# Requires the caller to already hold this binding on the target SA:\n# roles/iam.serviceAccountTokenCreator on api-runtime@my-app.iam.gserviceaccount.com",
+          "caption": {
+            "en": "Impersonation reproduces the exact production identity locally, with tokens that expire in an hour.",
+            "fr": "L'impersonation reproduit localement l'identité exacte de production, avec des jetons qui expirent en une heure."
+          }
+        },
+        {
+          "type": "gotcha",
+          "body": {
+            "en": "roles/iam.serviceAccountUser and roles/iam.serviceAccountTokenCreator are easy to confuse and both are privilege-escalation vectors: the first lets a principal attach an SA to a new resource (a VM, a Cloud Run revision) so that resource runs as the SA, the second lets a principal mint tokens and act as the SA directly, right now. Granting either broadly (e.g. at project level, to a role that also deploys code) is functionally equivalent to granting every permission the target SA holds.",
+            "fr": "roles/iam.serviceAccountUser et roles/iam.serviceAccountTokenCreator se confondent facilement et sont tous deux des vecteurs d'escalade de privilèges : le premier permet à un principal d'attacher un SA à une nouvelle ressource (une VM, une révision Cloud Run) pour que cette ressource s'exécute en tant que ce SA, le second permet à un principal d'émettre des jetons et d'agir directement en tant que ce SA, immédiatement. Accorder l'un ou l'autre largement (par ex. au niveau projet, à un rôle qui déploie aussi du code) équivaut fonctionnellement à accorder toutes les permissions détenues par le SA cible."
+          }
+        },
+        {
+          "type": "tip",
+          "body": {
+            "en": "The interview-grade answer to \"how does your CI/CD authenticate to GCP\" in 2026 is Workload Identity Federation, full stop — GitHub Actions, GitLab CI and Terraform Cloud all support OIDC-based WIF providers, and any pipeline still storing a downloaded service account key as a repo secret is one leaked log line away from a real incident.",
+            "fr": "La réponse niveau entretien à « comment votre CI/CD s'authentifie-t-elle à GCP » en 2026 est la Workload Identity Federation, point final — GitHub Actions, GitLab CI et Terraform Cloud supportent tous des fournisseurs WIF basés sur OIDC, et tout pipeline qui stocke encore une clé de compte de service téléchargée comme secret de dépôt n'est qu'à une ligne de log fuitée d'un vrai incident."
+          }
+        }
+      ]
+    },
+    {
+      "id": "iam-security-kms",
+      "title": {
+        "en": "Cloud KMS: key hierarchy and encryption models",
+        "fr": "Cloud KMS : hiérarchie des clés et modèles de chiffrement"
+      },
+      "minutes": 5,
+      "blocks": [
+        {
+          "type": "text",
+          "body": {
+            "en": "The KMS hierarchy is key ring (a regional, immutable-location container purely for organizing and applying IAM at scale) → crypto key (a named purpose, e.g. encrypt/decrypt, with a defined rotation schedule) → key version (the actual cryptographic material). Rotating a key does not destroy anything: it creates a new primary version for future encryption while every prior version is kept, because data encrypted under an old version can only ever be decrypted with that exact version — rotation changes what gets used going forward, not what already exists.",
+            "fr": "La hiérarchie KMS est le trousseau de clés (key ring, un conteneur régional à emplacement immuable, purement pour organiser et appliquer IAM à l'échelle) → la clé cryptographique (un usage nommé, par ex. encrypt/decrypt, avec un calendrier de rotation défini) → la version de clé (le matériel cryptographique réel). Faire tourner une clé ne détruit rien : cela crée une nouvelle version primaire pour les chiffrements futurs, tandis que chaque version antérieure est conservée, car des données chiffrées sous une ancienne version ne peuvent être déchiffrées qu'avec cette version exacte — la rotation change ce qui sera utilisé à l'avenir, pas ce qui existe déjà."
+          }
+        },
+        {
+          "type": "text",
+          "body": {
+            "en": "Three encryption ownership models answer different questions. Google-managed: zero setup, Google holds and rotates everything, no lever to pull for compliance. CMEK (customer-managed encryption keys): you own a KMS key that wraps the data key, the key material still lives inside Google's infrastructure (optionally HSM-backed), but you control rotation, IAM on the key, and can revoke access to an entire dataset instantly by disabling the key. CSEK (customer-supplied): you hand Google the raw key material on every request for a narrow set of services (GCE disks, some GCS operations); Google never persists it, so losing your copy means permanent data loss. Direct KMS encrypt calls are also capped near 64KB, which is why real workloads use envelope encryption: a locally generated data encryption key (DEK) encrypts the bulk payload, and only that small DEK is wrapped by the KMS key (KEK) and stored alongside the ciphertext.",
+            "fr": "Trois modèles de propriété du chiffrement répondent à des questions différentes. Google-managed : zéro configuration, Google détient et fait tourner tout, aucun levier pour la conformité. CMEK (clés gérées par le client) : vous possédez une clé KMS qui enveloppe la clé de données, le matériel de clé reste hébergé dans l'infrastructure Google (éventuellement sur HSM), mais vous contrôlez la rotation, l'IAM sur la clé, et pouvez révoquer instantanément l'accès à tout un jeu de données en désactivant la clé. CSEK (clé fournie par le client) : vous remettez à Google le matériel de clé brut à chaque requête pour un ensemble restreint de services (disques GCE, certaines opérations GCS) ; Google ne le persiste jamais, donc perdre votre copie signifie une perte de données définitive. Les appels d'encrypt direct via KMS sont aussi plafonnés autour de 64 Ko, d'où l'usage du chiffrement enveloppe en production : une clé de chiffrement de données (DEK) générée localement chiffre la charge utile en masse, et seule cette petite DEK est enveloppée par la clé KMS (KEK) et stockée à côté du texte chiffré."
+          }
+        },
+        {
+          "type": "code",
+          "code": "gcloud kms keyrings create app-secrets --location=europe-west1\n\ngcloud kms keys create data-encryption-key \\\n  --keyring=app-secrets \\\n  --location=europe-west1 \\\n  --purpose=encryption \\\n  --rotation-period=90d \\\n  --next-rotation-time=2026-10-19T00:00:00Z \\\n  --protection-level=hsm",
+          "caption": {
+            "en": "An HSM-backed key with a 90-day automatic rotation schedule.",
+            "fr": "Une clé sur HSM avec une rotation automatique tous les 90 jours."
+          }
+        },
+        {
+          "type": "gotcha",
+          "body": {
+            "en": "Destroying a key version is the one KMS action with no undo: every byte ever encrypted under it becomes permanently unrecoverable the instant destruction completes, which is why Google enforces a mandatory pending-destruction window (24 hours by default, configurable up to 30 or more days) before the material is actually wiped. The other blast-radius trap is roles/cloudkms.cryptoKeyEncrypterDecrypter granted broadly: because one key routinely protects many unrelated resources (every disk, every secret, every BigQuery table using that CMEK key), a single overbroad binding on the key can quietly grant decrypt access to far more data than the grantor intended.",
+            "fr": "Détruire une version de clé est la seule action KMS sans retour arrière : chaque octet jamais chiffré sous cette version devient irrécupérable dès que la destruction s'achève, ce qui explique pourquoi Google impose une fenêtre obligatoire de destruction différée (24 heures par défaut, configurable jusqu'à 30 jours ou plus) avant que le matériel ne soit réellement effacé. L'autre piège de rayon d'impact est roles/cloudkms.cryptoKeyEncrypterDecrypter accordé trop largement : comme une seule clé protège couramment de nombreuses ressources sans rapport entre elles (chaque disque, chaque secret, chaque table BigQuery utilisant cette clé CMEK), un binding trop large sur la clé peut accorder silencieusement un accès en déchiffrement à bien plus de données que ce que son auteur voulait."
+          }
+        },
+        {
+          "type": "tip",
+          "body": {
+            "en": "CMEK does not make the underlying cryptography stronger than Google-managed keys — it is the same AES-256 either way. What it buys is control: instant, customer-initiated revocation, a visible audit trail of every key use, and satisfying compliance regimes that require the customer to hold the keys. Reach for Cloud External Key Manager only when a regulator or contract requires the key material to physically never touch Google's infrastructure — it adds a hard dependency on the external partner's availability and latency to every decrypt operation.",
+            "fr": "CMEK ne rend pas la cryptographie sous-jacente plus forte qu'avec des clés gérées par Google — c'est le même AES-256 dans les deux cas. Ce que cela achète, c'est le contrôle : révocation instantanée à l'initiative du client, trace d'audit visible de chaque usage de la clé, et conformité avec les régimes réglementaires exigeant que le client détienne les clés. Ne recourez à Cloud External Key Manager que lorsqu'un régulateur ou un contrat exige que le matériel de clé ne touche jamais physiquement l'infrastructure Google — cela ajoute une dépendance dure à la disponibilité et à la latence du partenaire externe sur chaque opération de déchiffrement."
+          }
+        }
+      ]
+    },
+    {
+      "id": "iam-security-secret-manager",
+      "title": {
+        "en": "Secret Manager: versions, access control, rotation",
+        "fr": "Secret Manager : versions, contrôle d'accès, rotation"
+      },
+      "minutes": 4,
+      "blocks": [
+        {
+          "type": "text",
+          "body": {
+            "en": "A Secret Manager secret is a named container for a sequence of immutable versions (each ENABLED, DISABLED or DESTROYED); applications fetch the current or a pinned version at runtime through the API or client library rather than having a value baked into an image or a deploy manifest. Replication is a real design decision: automatic replication lets Google place copies for availability, while user-managed replication pins the secret to specific regions, which matters whenever data residency requirements apply to the secret's content, not just to the primary data store.",
+            "fr": "Un secret Secret Manager est un conteneur nommé pour une suite de versions immuables (chacune ENABLED, DISABLED ou DESTROYED) ; les applications récupèrent la version courante ou une version épinglée au runtime via l'API ou une bibliothèque cliente, plutôt que d'avoir une valeur figée dans une image ou un manifeste de déploiement. La réplication est un vrai choix de conception : la réplication automatique laisse Google placer les copies pour la disponibilité, tandis que la réplication gérée par l'utilisateur épingle le secret à des régions précises, ce qui compte dès que des exigences de résidence des données s'appliquent au contenu du secret, pas seulement au data store principal."
+          }
+        },
+        {
+          "type": "text",
+          "body": {
+            "en": "Access control is entirely IAM (typically roles/secretmanager.secretAccessor bound on the individual secret, not the project), which is the structural advantage over environment variables and Kubernetes Secrets: env vars are visible in process listings, crash dumps and CI logs; Kubernetes Secrets are base64-encoded, not encrypted, by default, and readable by anything with API server access to that namespace unless application-layer encryption at rest is separately configured. Secret Manager also gives every read a Data Access audit log entry naming the exact secret version and caller — a per-access trail neither of the alternatives produces on its own.",
+            "fr": "Le contrôle d'accès repose entièrement sur IAM (typiquement roles/secretmanager.secretAccessor lié au secret individuel, pas au projet), ce qui constitue l'avantage structurel par rapport aux variables d'environnement et aux Secrets Kubernetes : les variables d'environnement sont visibles dans les listes de processus, les dumps de crash et les logs CI ; les Secrets Kubernetes sont encodés en base64, pas chiffrés, par défaut, et lisibles par tout ce qui a accès à l'API server de ce namespace, sauf à configurer séparément un chiffrement au repos côté application. Secret Manager génère aussi pour chaque lecture une entrée de log d'audit Data Access nommant la version exacte du secret et l'appelant — une traçabilité par accès qu'aucune des deux alternatives ne produit d'elle-même."
+          }
+        },
+        {
+          "type": "code",
+          "code": "gcloud secrets versions add db-password --data-file=./new-password.txt\n\n# Cloud Run injects the latest enabled version as an env var at startup,\n# without the value ever appearing in the service's YAML or the image\ngcloud run services update api \\\n  --region=europe-west1 \\\n  --set-secrets=DB_PASSWORD=db-password:latest",
+          "caption": {
+            "en": "The container never sees a static secret file; the platform resolves the reference at start time.",
+            "fr": "Le conteneur ne voit jamais de fichier de secret statique ; la plateforme résout la référence au démarrage."
+          }
+        },
+        {
+          "type": "gotcha",
+          "body": {
+            "en": "Secret Manager does not rotate anything on its own: a rotation schedule only fires a Pub/Sub notification on a cadence, and it is still the team's job to generate the new credential, add it as a version, and get every consumer to pick it up — a Cloud Function or workflow has to be wired to that notification, or rotation is purely cosmetic. The second recurring mistake is binding secretAccessor at the project level for convenience: that grants read access to every current and future secret in the project, not the one the requester actually needed.",
+            "fr": "Secret Manager ne fait tourner rien tout seul : un calendrier de rotation ne fait que déclencher une notification Pub/Sub à une cadence donnée, et c'est toujours à l'équipe de générer le nouvel identifiant, de l'ajouter comme version, et de faire adopter cette nouvelle version par chaque consommateur — une Cloud Function ou un workflow doit être branché à cette notification, sinon la rotation est purement cosmétique. La deuxième erreur récurrente est de lier secretAccessor au niveau du projet par commodité : cela accorde un accès en lecture à chaque secret présent et futur du projet, pas seulement à celui dont le demandeur avait réellement besoin."
+          }
+        },
+        {
+          "type": "tip",
+          "body": {
+            "en": "Data Access audit logs for Secret Manager are not on by default and must be explicitly enabled (at the project or organization level) before an incident, because they cannot be retroactively generated — teams investigating \"who read this credential\" after a breach too often discover the logging was never switched on. Enable it deliberately, scoped to the secrets that matter, since Data Access logging volume and cost scale with every read.",
+            "fr": "Les logs d'audit Data Access pour Secret Manager ne sont pas activés par défaut et doivent l'être explicitement (au niveau du projet ou de l'organisation) avant un incident, car ils ne peuvent pas être générés rétroactivement — les équipes qui enquêtent sur « qui a lu cet identifiant » après une compromission découvrent trop souvent que la journalisation n'avait jamais été activée. Activez-la délibérément, scopée aux secrets qui comptent, car le volume et le coût des logs Data Access croissent avec chaque lecture."
+          }
+        }
+      ]
+    },
+    {
+      "id": "iam-security-posture",
+      "title": {
+        "en": "Security posture: SCC, org policies, audit logs, real-world footguns",
+        "fr": "Posture de sécurité : SCC, org policies, logs d'audit, erreurs classiques"
+      },
+      "minutes": 5,
+      "blocks": [
+        {
+          "type": "text",
+          "body": {
+            "en": "Security Command Center is the single pane for security posture across an organization: it continuously surfaces misconfigurations (public buckets, overly permissive firewall rules, service accounts with excess roles), vulnerabilities, and, at the Premium tier, active threats via Event Threat Detection correlating Cloud Logging signals. Its usefulness scales with how deliberately it is scoped — Premium licensing is priced against resource usage across the org, so pointing it at everything without triage produces an alert firehose nobody acts on.",
+            "fr": "Security Command Center est le tableau de bord unique de la posture de sécurité pour une organisation : il fait remonter en continu les mauvaises configurations (buckets publics, règles de pare-feu trop permissives, comptes de service aux rôles excessifs), les vulnérabilités, et, en tier Premium, les menaces actives via Event Threat Detection qui corrèle les signaux de Cloud Logging. Son utilité dépend de la rigueur avec laquelle il est scopé — la licence Premium est tarifée sur l'usage des ressources à l'échelle de l'organisation, donc le pointer sur tout sans triage produit un déluge d'alertes que personne ne traite."
+          }
+        },
+        {
+          "type": "text",
+          "body": {
+            "en": "Organization policy constraints operate one layer above IAM: IAM answers \"who is allowed to act\", org policy answers \"what is allowed to exist at all\", regardless of anyone's role. Constraints like constraints/iam.disableServiceAccountKeyCreation, constraints/storage.publicAccessPrevention or constraints/compute.vmExternalIpAccess inherit down the hierarchy the same way IAM does, but each node can override the policy unless it is explicitly set to enforced — so a permissive default at a lower project can silently reopen what the org intended to close everywhere.",
+            "fr": "Les contraintes d'organization policy opèrent un niveau au-dessus d'IAM : IAM répond à « qui a le droit d'agir », l'org policy répond à « qu'a-t-on le droit de faire exister », indépendamment du rôle de quiconque. Des contraintes comme constraints/iam.disableServiceAccountKeyCreation, constraints/storage.publicAccessPrevention ou constraints/compute.vmExternalIpAccess héritent dans la hiérarchie de la même façon qu'IAM, mais chaque nœud peut surcharger la politique sauf si elle est explicitement fixée en « enforced » — un défaut permissif sur un projet plus bas peut donc rouvrir silencieusement ce que l'organisation voulait fermer partout."
+          }
+        },
+        {
+          "type": "code",
+          "code": "# Enforce at the organization level: no bucket under this org can ever\n# be made public, and no child project can override it\ngcloud resource-manager org-policies enable-enforce \\\n  constraints/storage.publicAccessPrevention \\\n  --organization=123456789012",
+          "caption": {
+            "en": "An org policy constraint blocks the configuration outright, independent of any IAM grant on the bucket.",
+            "fr": "Une contrainte d'org policy bloque purement et simplement la configuration, indépendamment de tout octroi IAM sur le bucket."
+          }
+        },
+        {
+          "type": "gotcha",
+          "body": {
+            "en": "Admin Activity audit logs (who created, changed or deleted a resource's configuration) are always on, free, and retained 400 days — they cannot be disabled. Data Access audit logs (who read or wrote the actual data: object contents, secret payloads, BigQuery rows) are off by default for every service except BigQuery, generate far higher volume, and must be turned on deliberately per service. Confusing the two is how an incident review discovers, too late, that the platform can prove who changed an IAM binding but has no record of who actually read the data it protected.",
+            "fr": "Les logs d'audit Admin Activity (qui a créé, modifié ou supprimé la configuration d'une ressource) sont toujours actifs, gratuits, et conservés 400 jours — ils ne peuvent pas être désactivés. Les logs d'audit Data Access (qui a lu ou écrit les données elles-mêmes : contenu d'objets, charges de secrets, lignes BigQuery) sont désactivés par défaut pour tous les services sauf BigQuery, génèrent un volume bien plus élevé, et doivent être activés délibérément service par service. Confondre les deux, c'est découvrir trop tard, lors d'une revue d'incident, que la plateforme peut prouver qui a modifié un binding IAM mais n'a aucune trace de qui a réellement lu la donnée qu'il protégeait."
+          }
+        },
+        {
+          "type": "tip",
+          "body": {
+            "en": "The misconfigurations worth naming by heart in a security interview, because they are also the ones that actually happen: public Cloud Storage buckets (an allUsers or allAuthenticatedUsers binding, often added \"just for testing\" and never removed), primitive Owner or Editor roles granted to humans or left on default service accounts in production, service account keys committed to a repository, and firewall rules opening 0.0.0.0/0 to ports beyond 80/443. Org policy constraints, SCC findings and periodic least-privilege reviews of IAM bindings are the standard trio for catching these before they become an incident rather than after.",
+            "fr": "Les mauvaises configurations à connaître par cœur en entretien de sécurité, parce que ce sont aussi celles qui se produisent réellement : buckets Cloud Storage publics (un binding allUsers ou allAuthenticatedUsers, souvent ajouté « juste pour tester » et jamais retiré), rôles primitifs Owner ou Editor accordés à des humains ou laissés sur des comptes de service par défaut en production, clés de compte de service committées dans un dépôt, et règles de pare-feu ouvrant 0.0.0.0/0 sur des ports au-delà de 80/443. Les contraintes d'org policy, les findings de SCC et des revues périodiques de moindre privilège sur les bindings IAM forment le trio standard pour détecter cela avant que ça ne devienne un incident plutôt qu'après."
+          }
+        }
+      ]
+    }
+  ],
+  "flashcards": [
+    {
+      "id": "fc-iam-security-hierarchy",
+      "front": {
+        "en": "A role is bound at the folder level and removed at the project below it. Does access disappear?",
+        "fr": "Un rôle est lié au niveau du dossier et retiré au niveau du projet en dessous. L'accès disparaît-il ?"
+      },
+      "back": {
+        "en": "No. Allow policies inherit strictly downward and only add up; a binding at an ancestor cannot be revoked at a descendant. Effective access is the union of every allow binding on the resource and all its ancestors.",
+        "fr": "Non. Les politiques d'autorisation héritent strictement vers le bas et ne font que s'additionner ; un binding sur un ancêtre ne peut pas être révoqué sur un descendant. L'accès effectif est l'union de tous les bindings d'autorisation sur la ressource et tous ses ancêtres."
+      }
+    },
+    {
+      "id": "fc-iam-security-role-types",
+      "front": {
+        "en": "Basic vs predefined vs custom IAM roles: pick one for a production database-only workload and justify it.",
+        "fr": "Rôles IAM basiques vs prédéfinis vs personnalisés : choisissez-en un pour une charge de travail en production limitée à une base de données, et justifiez."
+      },
+      "back": {
+        "en": "A predefined role such as roles/cloudsql.client: curated and maintained by Google, narrower than a basic role (Editor/Owner grant far more), and no ongoing maintenance burden unlike a custom role assembled permission-by-permission.",
+        "fr": "Un rôle prédéfini comme roles/cloudsql.client : curaté et maintenu par Google, plus restreint qu'un rôle basique (Editor/Owner accordent bien plus), et sans charge de maintenance continue contrairement à un rôle personnalisé assemblé permission par permission."
+      }
+    },
+    {
+      "id": "fc-iam-security-conditions",
+      "front": {
+        "en": "What does an IAM Condition add to a role binding, and give one realistic example.",
+        "fr": "Qu'ajoute une IAM Condition à un binding de rôle, et donnez un exemple réaliste ?"
+      },
+      "back": {
+        "en": "A CEL expression that scopes when the binding applies: by time (expiring contractor access), by resource name or type. Example: grant storage.objectViewer only until a fixed expiry date for an external partner.",
+        "fr": "Une expression CEL qui borne l'application du binding : par le temps (accès contractant expirant), par nom ou type de ressource. Exemple : accorder storage.objectViewer seulement jusqu'à une date d'expiration fixe pour un partenaire externe."
+      }
+    },
+    {
+      "id": "fc-iam-security-deny-policy",
+      "front": {
+        "en": "How does a deny policy differ from simply not granting an allow role, and who can override it?",
+        "fr": "En quoi une politique de refus (deny) diffère-t-elle du simple fait de ne pas accorder un rôle, et qui peut la contourner ?"
+      },
+      "back": {
+        "en": "A deny policy actively blocks a permission regardless of any allow binding elsewhere in the hierarchy, including inherited grants and Owner. It evaluates independently of the additive allow model and always wins; nobody can override it except by removing the deny policy itself.",
+        "fr": "Une politique de refus bloque activement une permission indépendamment de tout binding d'autorisation ailleurs dans la hiérarchie, y compris les octrois hérités et Owner. Elle s'évalue indépendamment du modèle additif des autorisations et l'emporte toujours ; personne ne peut la contourner sinon en retirant la politique de refus elle-même."
+      }
+    },
+    {
+      "id": "fc-iam-security-default-sa",
+      "front": {
+        "en": "Why is the Compute Engine default service account a recurring audit finding?",
+        "fr": "Pourquoi le compte de service par défaut de Compute Engine est-il un finding d'audit récurrent ?"
+      },
+      "back": {
+        "en": "It was historically auto-granted the project Editor role, so any code running on a VM using it inherited near-total project access. Best practice: disable it or replace it with a narrowly scoped user-managed service account per workload.",
+        "fr": "Il s'est vu historiquement octroyer automatiquement le rôle Editor du projet, donc tout code tournant sur une VM l'utilisant héritait d'un accès quasi total au projet. Bonne pratique : le désactiver ou le remplacer par un compte de service géré par l'utilisateur, restreint par charge de travail."
+      }
+    },
+    {
+      "id": "fc-iam-security-keys-vs-keyless",
+      "front": {
+        "en": "Why are exported service account keys discouraged, and what are the two keyless alternatives?",
+        "fr": "Pourquoi les clés de compte de service exportées sont-elles déconseillées, et quelles sont les deux alternatives sans clé ?"
+      },
+      "back": {
+        "en": "Keys never expire on their own and routinely leak into repos, logs and backups. Alternatives: Workload Identity Federation (external IdP token exchanged for short-lived GCP credentials, no stored secret) and service account impersonation (borrowing a target SA's identity via roles/iam.serviceAccountTokenCreator).",
+        "fr": "Les clés n'expirent jamais d'elles-mêmes et fuient couramment dans des dépôts, des logs et des sauvegardes. Alternatives : Workload Identity Federation (jeton d'un IdP externe échangé contre des identifiants GCP éphémères, aucun secret stocké) et l'impersonation de compte de service (emprunter l'identité d'un SA cible via roles/iam.serviceAccountTokenCreator)."
+      }
+    },
+    {
+      "id": "fc-iam-security-impersonation",
+      "front": {
+        "en": "How does a developer authenticate locally as the exact production service account without ever downloading a key?",
+        "fr": "Comment un développeur s'authentifie-t-il localement en tant que le compte de service exact de production, sans jamais télécharger de clé ?"
+      },
+      "back": {
+        "en": "gcloud auth application-default login --impersonate-service-account=SA_EMAIL, provided the developer already holds roles/iam.serviceAccountTokenCreator on that SA. Yields short-lived tokens, nothing persisted on disk.",
+        "fr": "gcloud auth application-default login --impersonate-service-account=EMAIL_DU_SA, à condition que le développeur détienne déjà roles/iam.serviceAccountTokenCreator sur ce SA. Produit des jetons éphémères, rien de persisté sur disque."
+      }
+    },
+    {
+      "id": "fc-iam-security-key-hierarchy",
+      "front": {
+        "en": "Name the three levels of the Cloud KMS hierarchy and what rotating a key actually does to old versions.",
+        "fr": "Nommez les trois niveaux de la hiérarchie Cloud KMS et ce que fait réellement la rotation d'une clé sur les anciennes versions."
+      },
+      "back": {
+        "en": "Key ring → crypto key → key version. Rotation creates a new primary version for future encryption; every prior version is retained, since data encrypted under an old version can only ever be decrypted with that exact version.",
+        "fr": "Trousseau de clés → clé cryptographique → version de clé. La rotation crée une nouvelle version primaire pour les chiffrements futurs ; chaque version antérieure est conservée, car des données chiffrées sous une ancienne version ne peuvent être déchiffrées qu'avec cette version exacte."
+      }
+    },
+    {
+      "id": "fc-iam-security-cmek-csek",
+      "front": {
+        "en": "CMEK, CSEK and Google-managed encryption: who holds the key material in each, and what does CMEK actually add?",
+        "fr": "CMEK, CSEK et chiffrement Google-managed : qui détient le matériel de clé dans chaque cas, et qu'apporte réellement CMEK ?"
+      },
+      "back": {
+        "en": "Google-managed: Google holds everything, zero control. CMEK: customer owns the KMS key (rotation, IAM, instant revocation) but material still lives in Google's infrastructure. CSEK: customer supplies raw key material per request, Google never persists it — losing it means permanent data loss. CMEK adds control, not stronger cryptography.",
+        "fr": "Google-managed : Google détient tout, aucun contrôle. CMEK : le client possède la clé KMS (rotation, IAM, révocation instantanée) mais le matériel reste hébergé dans l'infrastructure Google. CSEK : le client fournit le matériel de clé brut à chaque requête, Google ne le persiste jamais — le perdre signifie une perte de données définitive. CMEK apporte du contrôle, pas une cryptographie plus forte."
+      }
+    },
+    {
+      "id": "fc-iam-security-envelope",
+      "front": {
+        "en": "Why do real workloads use envelope encryption instead of calling KMS encrypt directly on the payload?",
+        "fr": "Pourquoi les charges de travail réelles utilisent-elles le chiffrement enveloppe plutôt qu'appeler encrypt KMS directement sur la charge utile ?"
+      },
+      "back": {
+        "en": "Direct KMS encrypt calls are capped near 64KB. A locally generated data encryption key (DEK) encrypts the bulk payload; only that small DEK is wrapped by the KMS key (KEK) and stored beside the ciphertext, keeping KMS calls small and fast.",
+        "fr": "Les appels d'encrypt direct via KMS sont plafonnés autour de 64 Ko. Une clé de chiffrement de données (DEK) générée localement chiffre la charge utile en masse ; seule cette petite DEK est enveloppée par la clé KMS (KEK) et stockée à côté du texte chiffré, gardant les appels KMS légers et rapides."
+      }
+    },
+    {
+      "id": "fc-iam-security-secret-versions",
+      "front": {
+        "en": "How is access to a Secret Manager secret controlled, and what unit should the binding target?",
+        "fr": "Comment l'accès à un secret Secret Manager est-il contrôlé, et sur quelle unité le binding doit-il porter ?"
+      },
+      "back": {
+        "en": "Entirely via IAM, typically roles/secretmanager.secretAccessor. Bind it on the individual secret, not the project — a project-level binding grants read access to every current and future secret in the project.",
+        "fr": "Entièrement via IAM, typiquement roles/secretmanager.secretAccessor. Liez-le au secret individuel, pas au projet — un binding au niveau projet accorde un accès en lecture à chaque secret présent et futur du projet."
+      }
+    },
+    {
+      "id": "fc-iam-security-secret-vs-envvar",
+      "front": {
+        "en": "What does Secret Manager give you that a plain environment variable or a Kubernetes Secret does not?",
+        "fr": "Qu'apporte Secret Manager qu'une simple variable d'environnement ou un Secret Kubernetes n'apporte pas ?"
+      },
+      "back": {
+        "en": "IAM-based per-secret access control, versioning, and a per-read Data Access audit trail. Env vars leak into process listings, crash dumps and CI logs; Kubernetes Secrets are base64-encoded (not encrypted) by default and readable by anything with API server access.",
+        "fr": "Un contrôle d'accès par secret basé sur IAM, du versionnement, et une trace d'audit Data Access par lecture. Les variables d'environnement fuient dans les listes de processus, les dumps de crash et les logs CI ; les Secrets Kubernetes sont encodés en base64 (pas chiffrés) par défaut et lisibles par tout ce qui a accès à l'API server."
+      }
+    },
+    {
+      "id": "fc-iam-security-audit-logs",
+      "front": {
+        "en": "Admin Activity vs Data Access audit logs: which is always on, and which must be manually enabled?",
+        "fr": "Logs d'audit Admin Activity vs Data Access : lequel est toujours actif, et lequel doit être activé manuellement ?"
+      },
+      "back": {
+        "en": "Admin Activity (config changes: who created/modified/deleted a resource) is always on, free, retained 400 days, cannot be disabled. Data Access (who read/wrote actual data, incl. secret reads) is off by default for every service except BigQuery, and must be enabled explicitly per service.",
+        "fr": "Admin Activity (changements de config : qui a créé/modifié/supprimé une ressource) est toujours actif, gratuit, conservé 400 jours, non désactivable. Data Access (qui a lu/écrit les données réelles, y compris les lectures de secrets) est désactivé par défaut pour tous les services sauf BigQuery, et doit être activé explicitement service par service."
+      }
+    },
+    {
+      "id": "fc-iam-security-misconfig",
+      "front": {
+        "en": "Name three of the most common real-world GCP security misconfigurations and the control that catches each.",
+        "fr": "Citez trois des mauvaises configurations de sécurité GCP les plus fréquentes en pratique, et le contrôle qui capte chacune."
+      },
+      "back": {
+        "en": "Public buckets (allUsers binding) — caught by constraints/storage.publicAccessPrevention or SCC. Primitive Owner/Editor roles in production — caught by least-privilege IAM reviews. Committed service account keys — caught by constraints/iam.disableServiceAccountKeyCreation plus secret scanning.",
+        "fr": "Buckets publics (binding allUsers) — capté par constraints/storage.publicAccessPrevention ou SCC. Rôles primitifs Owner/Editor en production — capté par des revues IAM de moindre privilège. Clés de compte de service committées — capté par constraints/iam.disableServiceAccountKeyCreation et le scan de secrets."
+      }
+    }
+  ],
+  "exercises": [
+    {
+      "id": "ex-iam-security-basic-roles",
+      "kind": "mcq",
+      "prompt": {
+        "en": "A short-term contractor needs to read application logs in Cloud Logging for one project, nothing else. They are granted roles/editor \"to be safe, in case they need more later\". What is the correct fix?",
+        "fr": "Un contractant de courte durée doit lire les logs applicatifs dans Cloud Logging pour un seul projet, rien d'autre. On lui accorde roles/editor « par sécurité, au cas où il aurait besoin de plus plus tard ». Quel est le correctif approprié ?"
+      },
+      "choices": [
+        {
+          "id": "a",
+          "label": {
+            "en": "Replace it with roles/logging.viewer scoped to that project only",
+            "fr": "Le remplacer par roles/logging.viewer, scopé à ce seul projet"
+          }
+        },
+        {
+          "id": "b",
+          "label": {
+            "en": "Keep roles/editor but add an IAM Condition limiting it to log resources",
+            "fr": "Garder roles/editor mais ajouter une IAM Condition le limitant aux ressources de logs"
+          }
+        },
+        {
+          "id": "c",
+          "label": {
+            "en": "Downgrade to roles/viewer, which is close enough for logs",
+            "fr": "Rétrograder vers roles/viewer, suffisamment proche pour les logs"
+          }
+        },
+        {
+          "id": "d",
+          "label": {
+            "en": "Leave roles/editor since the contractor is short-term anyway",
+            "fr": "Laisser roles/editor puisque le contractant est de toute façon de courte durée"
+          }
+        }
+      ],
+      "answerId": "a",
+      "explanation": {
+        "en": "roles/logging.viewer is the predefined role built exactly for this need: read-only, log-scoped, maintained by Google. roles/editor grants write and delete across nearly every service regardless of any condition bolted on top — conditions scope when a grant applies, not how large the underlying role is, so option b still leaves a dangerously broad role active. roles/viewer is closer but still grants read access project-wide, well beyond logs; least privilege means the narrowest predefined role that covers the actual need, not the nearest broad one.",
+        "fr": "roles/logging.viewer est le rôle prédéfini conçu exactement pour ce besoin : lecture seule, scopé aux logs, maintenu par Google. roles/editor accorde écriture et suppression sur presque tous les services, quelle que soit une condition ajoutée par-dessus — les conditions bornent quand un octroi s'applique, pas l'ampleur du rôle sous-jacent, donc l'option b laisse tout de même actif un rôle dangereusement large. roles/viewer est plus proche mais accorde encore un accès en lecture à l'échelle du projet, bien au-delà des logs ; le moindre privilège signifie le rôle prédéfini le plus étroit couvrant le besoin réel, pas le plus large qui s'en approche."
+      },
+      "difficulty": 1
+    },
+    {
+      "id": "ex-iam-security-inheritance",
+      "kind": "predict-output",
+      "prompt": {
+        "en": "roles/storage.admin is bound on the folder \"engineering\". A security engineer later runs the command below directly on project \"analytics-prod\", a child of that folder, then checks whether a user in that binding can still delete buckets in analytics-prod.",
+        "fr": "roles/storage.admin est lié sur le dossier « engineering ». Un ingénieur sécurité exécute ensuite la commande ci-dessous directement sur le projet « analytics-prod », enfant de ce dossier, puis vérifie si un utilisateur de ce binding peut encore supprimer des buckets dans analytics-prod."
+      },
+      "code": "gcloud projects remove-iam-policy-binding analytics-prod \\\n  --member=\"group:data-team@my-org.com\" \\\n  --role=\"roles/storage.admin\"",
+      "choices": [
+        {
+          "id": "a",
+          "label": {
+            "en": "Access is removed: the project-level binding was the source of the grant",
+            "fr": "L'accès est retiré : le binding au niveau projet était la source de l'octroi"
+          }
+        },
+        {
+          "id": "b",
+          "label": {
+            "en": "Access remains: the folder-level binding still grants roles/storage.admin by inheritance",
+            "fr": "L'accès demeure : le binding au niveau dossier accorde toujours roles/storage.admin par héritage"
+          }
+        },
+        {
+          "id": "c",
+          "label": {
+            "en": "The command fails because you cannot remove a role inherited from a folder",
+            "fr": "La commande échoue car on ne peut pas retirer un rôle hérité d'un dossier"
+          }
+        },
+        {
+          "id": "d",
+          "label": {
+            "en": "Access becomes partial: delete is revoked but read/write remain",
+            "fr": "L'accès devient partiel : la suppression est révoquée mais lecture/écriture demeurent"
+          }
+        }
+      ],
+      "answerId": "b",
+      "explanation": {
+        "en": "The command only removes a binding that likely never existed at the project (or, if it did, was redundant) — it has no effect on the folder-level binding. Since data-team@ still holds roles/storage.admin at the engineering folder, and allow policies inherit downward and only add up, the group's effective access on analytics-prod is unchanged: they can still delete buckets. There is no partial-role concept in IAM; a role is granted or not, in full, at the resource being evaluated.",
+        "fr": "La commande ne fait que retirer un binding qui n'existait probablement jamais au niveau du projet (ou, s'il existait, était redondant) — elle n'a aucun effet sur le binding au niveau du dossier. Puisque data-team@ détient toujours roles/storage.admin sur le dossier engineering, et que les politiques d'autorisation héritent vers le bas et ne font que s'additionner, l'accès effectif du groupe sur analytics-prod est inchangé : il peut toujours supprimer des buckets. Il n'existe aucune notion de rôle partiel en IAM ; un rôle est accordé ou non, en totalité, sur la ressource évaluée."
+      },
+      "difficulty": 2
+    },
+    {
+      "id": "ex-iam-security-find-bug-wif",
+      "kind": "find-bug",
+      "prompt": {
+        "en": "A team wires GitHub Actions to GCP via Workload Identity Federation to avoid storing a service account key. Deploys work, but a security review flags that a workflow in a completely unrelated fork of the repository was able to assume the same GCP identity. Find the bug in the provider configuration below.",
+        "fr": "Une équipe branche GitHub Actions à GCP via Workload Identity Federation pour éviter de stocker une clé de compte de service. Les déploiements fonctionnent, mais une revue de sécurité signale qu'un workflow d'un fork totalement indépendant du dépôt a pu endosser la même identité GCP. Trouvez le bug dans la configuration du provider ci-dessous."
+      },
+      "code": "gcloud iam workload-identity-pools providers create-oidc github-provider \\\n  --workload-identity-pool=github-pool \\\n  --location=global \\\n  --issuer-uri=\"https://token.actions.githubusercontent.com\" \\\n  --attribute-mapping=\"google.subject=assertion.sub,attribute.repository=assertion.repository\"\n\n# Binding on the target service account:\ngcloud iam service-accounts add-iam-policy-binding deploy-sa@my-app.iam.gserviceaccount.com \\\n  --role=roles/iam.workloadIdentityUser \\\n  --member=\"principalSet://iam.googleapis.com/projects/123/locations/global/workloadIdentityPools/github-pool/*\"",
+      "choices": [
+        {
+          "id": "a",
+          "label": {
+            "en": "OIDC providers cannot be used for GitHub Actions, only SAML",
+            "fr": "Les providers OIDC ne peuvent pas être utilisés pour GitHub Actions, seul SAML fonctionne"
+          }
+        },
+        {
+          "id": "b",
+          "label": {
+            "en": "The member binding uses a wildcard on the whole pool instead of an attribute condition scoping it to attribute.repository=\"my-org/my-app\"",
+            "fr": "Le binding utilise un joker sur tout le pool au lieu d'une condition d'attribut le restreignant à attribute.repository=\"my-org/my-app\""
+          }
+        },
+        {
+          "id": "c",
+          "label": {
+            "en": "The attribute-mapping is missing google.subject, which is mandatory",
+            "fr": "Le attribute-mapping manque google.subject, qui est obligatoire"
+          }
+        },
+        {
+          "id": "d",
+          "label": {
+            "en": "workloadIdentityUser must be granted at the project level, not the service account level",
+            "fr": "workloadIdentityUser doit être accordé au niveau projet, pas au niveau du compte de service"
+          }
+        }
+      ],
+      "answerId": "b",
+      "explanation": {
+        "en": "The pool-wide wildcard (workloadIdentityPools/github-pool/*) authorizes any subject that can present a valid token from that pool's issuer — including any repository or fork that can obtain a GitHub Actions OIDC token, since the pool itself does not restrict by repository. The mapped attribute.repository must be used to scope the member to a specific principalSet, e.g. attribute.repository/my-org/my-app, so only workflows running in that exact repository (and typically only on protected branches) can assume the identity. google.subject is present and mapping is otherwise correct; the binding is correctly on the service account, not the project.",
+        "fr": "Le joker sur tout le pool (workloadIdentityPools/github-pool/*) autorise tout sujet capable de présenter un jeton valide de l'émetteur de ce pool — y compris n'importe quel dépôt ou fork capable d'obtenir un jeton OIDC GitHub Actions, puisque le pool lui-même ne restreint pas par dépôt. L'attribut mappé attribute.repository doit être utilisé pour restreindre le membre à un principalSet précis, par ex. attribute.repository/my-org/my-app, afin que seuls les workflows du dépôt exact (et typiquement des branches protégées) puissent endosser l'identité. google.subject est présent et le mapping est par ailleurs correct ; le binding est correctement posé sur le compte de service, pas sur le projet."
+      },
+      "difficulty": 3
+    },
+    {
+      "id": "ex-iam-security-predict-key-rotation",
+      "kind": "predict-output",
+      "prompt": {
+        "en": "A CMEK-encrypted BigQuery table has been in use for a year, and the underlying Cloud KMS key has an automatic 90-day rotation schedule that has already fired four times. A query reads rows written 11 months ago. What happens?",
+        "fr": "Une table BigQuery chiffrée en CMEK est en usage depuis un an, et la clé Cloud KMS sous-jacente a une rotation automatique tous les 90 jours, déjà déclenchée quatre fois. Une requête lit des lignes écrites il y a 11 mois. Que se passe-t-il ?"
+      },
+      "code": "# Key created 12 months ago, rotation-period=90d, next-rotation already past x4\n# No key version has been manually destroyed\nSELECT * FROM analytics.events WHERE event_date = '2025-08-19'",
+      "choices": [
+        {
+          "id": "a",
+          "label": {
+            "en": "The query fails: only the current key version can decrypt any data",
+            "fr": "La requête échoue : seule la version courante de la clé peut déchiffrer les données"
+          }
+        },
+        {
+          "id": "b",
+          "label": {
+            "en": "The query succeeds: BigQuery transparently uses whichever key version originally encrypted each row, and all versions still exist",
+            "fr": "La requête réussit : BigQuery utilise en toute transparence la version de clé ayant chiffré chaque ligne à l'origine, et toutes les versions existent encore"
+          }
+        },
+        {
+          "id": "c",
+          "label": {
+            "en": "The query succeeds but returns stale data because rotation invalidates old rows",
+            "fr": "La requête réussit mais renvoie des données obsolètes car la rotation invalide les anciennes lignes"
+          }
+        },
+        {
+          "id": "d",
+          "label": {
+            "en": "The table must be manually re-encrypted with the new key version before any read",
+            "fr": "La table doit être manuellement rechiffrée avec la nouvelle version de clé avant toute lecture"
+          }
+        }
+      ],
+      "answerId": "b",
+      "explanation": {
+        "en": "Rotation only changes which key version is used for new encryption going forward; every prior version remains fully available unless explicitly destroyed. Data encrypted 11 months ago under an earlier version decrypts fine as long as that version and the caller's cloudkms.cryptoKeyEncrypterDecrypter permission both still exist — no manual re-encryption step is needed, and rotation has no effect on query correctness or freshness.",
+        "fr": "La rotation ne change que la version de clé utilisée pour les chiffrements futurs ; chaque version antérieure reste pleinement disponible sauf destruction explicite. Des données chiffrées il y a 11 mois sous une version antérieure se déchiffrent sans problème tant que cette version et la permission cloudkms.cryptoKeyEncrypterDecrypter de l'appelant existent encore — aucun rechiffrement manuel n'est nécessaire, et la rotation n'a aucun effet sur l'exactitude ou la fraîcheur de la requête."
+      },
+      "difficulty": 2
+    },
+    {
+      "id": "ex-iam-security-mcq-cmek",
+      "kind": "mcq",
+      "prompt": {
+        "en": "A regulator requires that the encryption key material for a dataset never, under any circumstance, be held inside Google's infrastructure, while still using GCS for storage. Which option satisfies this?",
+        "fr": "Un régulateur exige que le matériel de chiffrement d'un jeu de données ne soit jamais, en aucune circonstance, hébergé dans l'infrastructure Google, tout en continuant à utiliser GCS pour le stockage. Quelle option répond à cette exigence ?"
+      },
+      "choices": [
+        {
+          "id": "a",
+          "label": {
+            "en": "CMEK with an HSM-backed Cloud KMS key",
+            "fr": "CMEK avec une clé Cloud KMS sur HSM"
+          }
+        },
+        {
+          "id": "b",
+          "label": {
+            "en": "Cloud External Key Manager (EKM), keeping key material with an external partner",
+            "fr": "Cloud External Key Manager (EKM), le matériel de clé restant chez un partenaire externe"
+          }
+        },
+        {
+          "id": "c",
+          "label": {
+            "en": "Google-managed encryption with a shorter rotation period",
+            "fr": "Chiffrement Google-managed avec une période de rotation plus courte"
+          }
+        },
+        {
+          "id": "d",
+          "label": {
+            "en": "CSEK, supplying the key on every read and write request",
+            "fr": "CSEK, en fournissant la clé à chaque requête de lecture et d'écriture"
+          }
+        }
+      ],
+      "answerId": "b",
+      "explanation": {
+        "en": "Only Cloud EKM keeps the key material entirely outside Google's infrastructure at all times, with GCP calling out to the external partner for every crypto operation — the only option that matches \"never inside Google's infrastructure\" while still storing data in GCS. CMEK, even HSM-backed, still holds material inside Google's HSMs. CSEK is closer in spirit but Google does briefly hold the supplied key material in memory to perform the operation, and it does not scale to arbitrary GCS access patterns the way this scenario implies; it also isn't supported for most services. Google-managed keeps Google in full control regardless of rotation frequency.",
+        "fr": "Seul Cloud EKM garde le matériel de clé entièrement hors de l'infrastructure Google en permanence, GCP faisant appel au partenaire externe pour chaque opération cryptographique — la seule option correspondant à « jamais dans l'infrastructure Google » tout en stockant les données dans GCS. CMEK, même sur HSM, héberge toujours le matériel dans les HSM de Google. CSEK s'en rapproche dans l'esprit, mais Google détient brièvement en mémoire le matériel fourni pour exécuter l'opération, et cela ne s'adapte pas à des accès GCS arbitraires comme le sous-entend ce scénario ; ce n'est de plus pas supporté par la plupart des services. Google-managed laisse Google en plein contrôle quelle que soit la fréquence de rotation."
+      },
+      "difficulty": 3
+    },
+    {
+      "id": "ex-iam-security-find-bug-secret",
+      "kind": "find-bug",
+      "prompt": {
+        "en": "A platform team wants only the billing-service application to read the STRIPE_API_KEY secret. After this change, they discover every service account in the project can read it. Find the bug.",
+        "fr": "Une équipe plateforme veut que seule l'application billing-service puisse lire le secret STRIPE_API_KEY. Après ce changement, elle découvre que tous les comptes de service du projet peuvent le lire. Trouvez le bug."
+      },
+      "code": "gcloud projects add-iam-policy-binding my-app \\\n  --member=\"serviceAccount:billing-service@my-app.iam.gserviceaccount.com\" \\\n  --role=\"roles/secretmanager.secretAccessor\"",
+      "choices": [
+        {
+          "id": "a",
+          "label": {
+            "en": "roles/secretmanager.secretAccessor does not exist; it should be roles/secretmanager.viewer",
+            "fr": "roles/secretmanager.secretAccessor n'existe pas ; il fallait roles/secretmanager.viewer"
+          }
+        },
+        {
+          "id": "b",
+          "label": {
+            "en": "The binding was applied to the project instead of the specific secret, granting read access to every secret in the project to that account, and implicitly to any principal with a broad enough role at the project",
+            "fr": "Le binding a été appliqué au projet au lieu du secret précis, accordant un accès en lecture à tous les secrets du projet à ce compte, et implicitement à tout principal disposant d'un rôle suffisamment large au niveau projet"
+          }
+        },
+        {
+          "id": "c",
+          "label": {
+            "en": "secretAccessor always applies at the organization level regardless of where it is bound",
+            "fr": "secretAccessor s'applique toujours au niveau de l'organisation quel que soit l'endroit où il est lié"
+          }
+        },
+        {
+          "id": "d",
+          "label": {
+            "en": "gcloud projects add-iam-policy-binding cannot target Secret Manager roles at all",
+            "fr": "gcloud projects add-iam-policy-binding ne peut pas cibler les rôles Secret Manager"
+          }
+        }
+      ],
+      "answerId": "b",
+      "explanation": {
+        "en": "The command is syntactically valid and secretAccessor is a real role, but binding it at the project grants billing-service read access to every current and future secret in the project — not just STRIPE_API_KEY — and any other principal already holding a broad project-level role (e.g. Editor) gains the same reach through their existing permissions. The fix is gcloud secrets add-iam-policy-binding STRIPE_API_KEY --member=... --role=roles/secretmanager.secretAccessor, scoping the grant to that one secret.",
+        "fr": "La commande est syntaxiquement valide et secretAccessor est un rôle réel, mais le lier au niveau du projet accorde à billing-service un accès en lecture à chaque secret présent et futur du projet — pas seulement STRIPE_API_KEY — et tout autre principal détenant déjà un rôle large au niveau projet (par ex. Editor) obtient la même portée via ses permissions existantes. Le correctif est gcloud secrets add-iam-policy-binding STRIPE_API_KEY --member=... --role=roles/secretmanager.secretAccessor, en restreignant l'octroi à ce seul secret."
+      },
+      "difficulty": 2
+    },
+    {
+      "id": "ex-iam-security-predict-audit",
+      "kind": "predict-output",
+      "prompt": {
+        "en": "A project has never touched its audit log configuration beyond the GCP defaults. An engineer accesses a Secret Manager secret's payload via the API. A week later, an incident review searches Cloud Logging for that access. What do they find?",
+        "fr": "Un projet n'a jamais touché à la configuration de ses logs d'audit au-delà des réglages par défaut de GCP. Un ingénieur accède à la charge d'un secret Secret Manager via l'API. Une semaine plus tard, une revue d'incident recherche cet accès dans Cloud Logging. Que trouve-t-elle ?"
+      },
+      "choices": [
+        {
+          "id": "a",
+          "label": {
+            "en": "A Data Access log entry naming the engineer and the secret version",
+            "fr": "Une entrée de log Data Access nommant l'ingénieur et la version du secret"
+          }
+        },
+        {
+          "id": "b",
+          "label": {
+            "en": "Nothing: Data Access logs for Secret Manager are off by default and were never enabled",
+            "fr": "Rien : les logs Data Access pour Secret Manager sont désactivés par défaut et n'ont jamais été activés"
+          }
+        },
+        {
+          "id": "c",
+          "label": {
+            "en": "An Admin Activity log entry, since any API call is logged there by default",
+            "fr": "Une entrée de log Admin Activity, car tout appel API y est journalisé par défaut"
+          }
+        },
+        {
+          "id": "d",
+          "label": {
+            "en": "A log entry, but only if the secret was destroyed or modified, not merely read",
+            "fr": "Une entrée de log, mais seulement si le secret a été détruit ou modifié, pas simplement lu"
+          }
+        }
+      ],
+      "answerId": "b",
+      "explanation": {
+        "en": "Reading a secret's payload is a data access, not a configuration change, so it is governed by Data Access audit logs — which are disabled by default for every service except BigQuery and must be explicitly turned on. With no prior configuration change, there is no record of the read at all. Admin Activity logs would only capture actions like creating or deleting the secret resource itself, not reading its value, and there is no way to retroactively generate the missing entry.",
+        "fr": "Lire la charge d'un secret est un accès aux données, pas un changement de configuration, donc c'est régi par les logs d'audit Data Access — désactivés par défaut pour tous les services sauf BigQuery, et devant être activés explicitement. Sans changement de configuration préalable, il n'existe aucune trace de cette lecture. Les logs Admin Activity ne capturent que des actions comme la création ou la suppression de la ressource secret elle-même, pas la lecture de sa valeur, et il n'existe aucun moyen de générer rétroactivement l'entrée manquante."
+      },
+      "difficulty": 1
+    },
+    {
+      "id": "ex-iam-security-mcq-public-bucket",
+      "kind": "mcq",
+      "prompt": {
+        "en": "An org has constraints/storage.publicAccessPrevention enforced at the organization node. A developer on a child project runs a command granting roles/storage.objectViewer to allUsers on a bucket, intending to serve public assets. What happens?",
+        "fr": "Une organisation a la contrainte constraints/storage.publicAccessPrevention en enforced au niveau du nœud organisation. Un développeur sur un projet enfant exécute une commande accordant roles/storage.objectViewer à allUsers sur un bucket, dans l'intention de servir des assets publics. Que se passe-t-il ?"
+      },
+      "choices": [
+        {
+          "id": "a",
+          "label": {
+            "en": "The IAM binding succeeds and the bucket becomes public, since IAM and org policy are independent systems",
+            "fr": "Le binding IAM réussit et le bucket devient public, car IAM et org policy sont des systèmes indépendants"
+          }
+        },
+        {
+          "id": "b",
+          "label": {
+            "en": "The binding may be accepted but public access prevention still blocks anonymous/public access to the bucket's data, since the enforced org policy constraint overrides what IAM alone would allow",
+            "fr": "Le binding peut être accepté mais la prévention d'accès public bloque quand même l'accès anonyme/public aux données du bucket, car la contrainte d'org policy enforced l'emporte sur ce qu'IAM autoriserait seul"
+          }
+        },
+        {
+          "id": "c",
+          "label": {
+            "en": "The org policy constraint automatically deletes the offending IAM binding",
+            "fr": "La contrainte d'org policy supprime automatiquement le binding IAM fautif"
+          }
+        },
+        {
+          "id": "d",
+          "label": {
+            "en": "Public access prevention only applies to newly created buckets, not existing ones",
+            "fr": "La prévention d'accès public ne s'applique qu'aux buckets nouvellement créés, pas aux buckets existants"
+          }
+        }
+      ],
+      "answerId": "b",
+      "explanation": {
+        "en": "Org policy constraints answer \"what is allowed to exist\" independent of IAM's \"who is allowed to act\": an enforced publicAccessPrevention constraint blocks public access to bucket data regardless of what any IAM binding grants, and it applies continuously to existing resources under its scope, not just at creation time. It does not retroactively delete the IAM binding — the binding may sit there harmlessly — it simply prevents that binding from ever resulting in actual public access as long as the constraint stays enforced. This is exactly why org policy is described as a layer above IAM rather than a substitute for it.",
+        "fr": "Les contraintes d'org policy répondent à « qu'a-t-on le droit de faire exister » indépendamment du « qui a le droit d'agir » d'IAM : une contrainte publicAccessPrevention en enforced bloque l'accès public aux données du bucket quel que soit ce qu'accorde un binding IAM, et elle s'applique en continu aux ressources existantes dans son périmètre, pas seulement à la création. Elle ne supprime pas rétroactivement le binding IAM — celui-ci peut rester en place sans effet — elle empêche simplement que ce binding ne se traduise jamais par un accès public réel tant que la contrainte reste enforced. C'est exactement pourquoi l'org policy est décrite comme une couche au-dessus d'IAM plutôt qu'un substitut à IAM."
+      },
+      "difficulty": 3
+    }
+  ]
+}

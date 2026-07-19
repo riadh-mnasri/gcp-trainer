@@ -31,7 +31,7 @@
         "fr": "Cloud Storage, disques persistants, Filestore"
       },
       "icon": "🗄️",
-      "status": "planned"
+      "status": "available"
     },
     {
       "id": "databases",
@@ -41,7 +41,7 @@
         "fr": "Cloud SQL, Spanner, Firestore, Bigtable, AlloyDB"
       },
       "icon": "🛢️",
-      "status": "planned"
+      "status": "available"
     },
     {
       "id": "networking",
@@ -51,7 +51,7 @@
         "fr": "VPC, load balancing, DNS, connectivité hybride"
       },
       "icon": "🌐",
-      "status": "planned"
+      "status": "available"
     },
     {
       "id": "iam-security",
@@ -61,7 +61,7 @@
         "fr": "IAM, comptes de service, KMS, Secret Manager"
       },
       "icon": "🔐",
-      "status": "planned"
+      "status": "available"
     },
     {
       "id": "data-analytics",

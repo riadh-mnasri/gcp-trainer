@@ -1,0 +1,755 @@
+{
+  "id": "networking",
+  "title": { "en": "Networking", "fr": "Réseau" },
+  "tagline": {
+    "en": "VPC, load balancing, DNS, hybrid connectivity",
+    "fr": "VPC, load balancing, DNS, connectivité hybride"
+  },
+  "icon": "🌐",
+  "lessons": [
+    {
+      "id": "networking-vpc-fundamentals",
+      "title": {
+        "en": "VPC fundamentals: scope, modes, firewalls",
+        "fr": "Fondamentaux VPC : portée, modes, pare-feu"
+      },
+      "minutes": 5,
+      "blocks": [
+        {
+          "type": "text",
+          "body": {
+            "en": "A VPC network is a global resource: one network can span every region without any gateway or peering between regions. Subnets, in contrast, are regional resources with an IP range tied to a single region — a subnet never crosses region boundaries. This split is the first thing to internalize: adding a region to an architecture means creating a new subnet, not a new network, and route propagation between regions inside one VPC is automatic and free of the friction that VPC peering introduces.",
+            "fr": "Un réseau VPC est une ressource globale : un seul réseau peut couvrir toutes les régions sans passerelle ni peering entre elles. Les sous-réseaux, eux, sont des ressources régionales dont la plage d'adresses est rattachée à une seule région — un sous-réseau ne franchit jamais de frontière régionale. C'est le premier réflexe à acquérir : ajouter une région à une architecture crée un nouveau sous-réseau, pas un nouveau réseau, et la propagation des routes entre régions au sein d'un même VPC est automatique et sans les frictions du peering VPC."
+          }
+        },
+        {
+          "type": "text",
+          "body": {
+            "en": "Auto mode creates one subnet per region automatically with predefined, non-overlapping /20 ranges — convenient for a demo or a sandbox, dangerous in production because the ranges are picked for you and tend to collide the day you need to peer with another VPC or connect on-prem. Custom mode starts with zero subnets and forces explicit choices of region and CIDR range; it is more upfront work but it is the only sane default once IP planning, peering or hybrid connectivity enter the picture. Auto-mode networks can be converted to custom mode, but never the reverse.",
+            "fr": "Le mode automatique crée un sous-réseau par région avec des plages /20 prédéfinies et non chevauchantes — pratique pour une démo ou un bac à sable, dangereux en production car les plages sont choisies à votre place et finissent par entrer en collision le jour où il faut faire du peering avec un autre VPC ou se connecter à l'on-premise. Le mode personnalisé démarre sans aucun sous-réseau et impose de choisir explicitement région et plage CIDR ; c'est plus de travail en amont, mais c'est le seul choix raisonnable dès que la planification IP, le peering ou la connectivité hybride entrent en jeu. Un réseau en mode auto peut être converti en mode personnalisé, jamais l'inverse."
+          }
+        },
+        {
+          "type": "code",
+          "code": "# Explicit-deny-by-default network: nothing gets in until you say so\ngcloud compute firewall-rules create allow-ssh-from-iap \\\n  --network=prod-vpc \\\n  --direction=INGRESS \\\n  --action=ALLOW \\\n  --rules=tcp:22 \\\n  --source-ranges=35.235.240.0/20 \\\n  --target-service-accounts=api-runner@my-app.iam.gserviceaccount.com",
+          "caption": {
+            "en": "Targeting a rule by service account instead of a network tag binds it to a real, IAM-governed identity.",
+            "fr": "Cibler une règle par compte de service plutôt que par tag réseau la rattache à une identité réelle, gouvernée par IAM."
+          }
+        },
+        {
+          "type": "gotcha",
+          "body": {
+            "en": "Network tags are plain strings with no access control: any principal holding compute.instances.setTags can attach `env:prod` to a throwaway VM and inherit every firewall rule that targets that tag. This is a classic real-world lateral-movement path, not a theoretical one. Service-account targeting closes it, because attaching a service account to an instance requires the `iam.serviceAccounts.actAs` permission on that exact account — a real IAM boundary, not a naming convention.",
+            "fr": "Les tags réseau sont de simples chaînes sans aucun contrôle d'accès : tout principal disposant de compute.instances.setTags peut coller `env:prod` sur une VM jetable et hériter de toutes les règles de pare-feu ciblant ce tag. C'est un chemin classique de mouvement latéral en conditions réelles, pas une hypothèse d'école. Cibler par compte de service ferme cette porte, car attacher un compte de service à une instance exige la permission `iam.serviceAccounts.actAs` sur ce compte précis — une vraie frontière IAM, pas une simple convention de nommage."
+          }
+        },
+        {
+          "type": "tip",
+          "body": {
+            "en": "Shared VPC is the answer to \"one org, many teams, one network\": a host project owns the VPC and subnets, service projects attach and their VMs/GKE clusters/Cloud Run services deploy into host subnets while each team keeps its own project for billing, IAM and resource lifecycle. Subnet-level IAM (`compute.networkUser`) lets network admins grant a team exactly the subnets it needs, avoiding both a single unmanageable project and the routing sprawl of one VPC per team stitched together with peering.",
+            "fr": "Le Shared VPC répond à « une organisation, plusieurs équipes, un seul réseau » : un projet hôte possède le VPC et les sous-réseaux, les projets de service s'y rattachent et leurs VM/clusters GKE/services Cloud Run se déploient dans les sous-réseaux hôtes, tandis que chaque équipe garde son propre projet pour la facturation, l'IAM et le cycle de vie des ressources. L'IAM au niveau du sous-réseau (`compute.networkUser`) permet aux administrateurs réseau d'accorder à une équipe exactement les sous-réseaux dont elle a besoin, évitant à la fois un projet unique ingérable et la prolifération de routes d'un VPC par équipe recousu au peering."
+          }
+        }
+      ]
+    },
+    {
+      "id": "networking-load-balancing",
+      "title": {
+        "en": "Load balancing: the L4/L7, global/regional matrix",
+        "fr": "Load balancing : la matrice L4/L7, global/régional"
+      },
+      "minutes": 5,
+      "blocks": [
+        {
+          "type": "text",
+          "body": {
+            "en": "Two independent axes drive the choice. Layer: L4 (TCP/UDP passthrough or proxy) forwards packets without reading HTTP, cheaper and protocol-agnostic; L7 (HTTP(S)) terminates the connection and can route on host, path or header, and is required for anything that needs URL maps, Cloud CDN or Cloud Armor WAF rules. Scope: global uses a single anycast IP in front of backends in any region with Google's edge network doing the routing (Premium tier only); regional keeps the IP and the routing decision inside one region, which matters for data residency or when every backend already lives in one place anyway.",
+            "fr": "Deux axes indépendants guident le choix. La couche : L4 (TCP/UDP en passthrough ou proxy) relaie les paquets sans lire le HTTP, moins cher et agnostique au protocole ; L7 (HTTP(S)) termine la connexion et peut router sur l'hôte, le chemin ou l'en-tête, et est requis pour tout ce qui a besoin d'URL maps, de Cloud CDN ou de règles WAF Cloud Armor. La portée : global utilise une seule IP anycast devant des backends de n'importe quelle région, le réseau périphérique de Google faisant le routage (Premium tier uniquement) ; régional garde l'IP et la décision de routage dans une seule région, ce qui compte pour la résidence des données ou quand tous les backends vivent déjà au même endroit."
+          }
+        },
+        {
+          "type": "text",
+          "body": {
+            "en": "Every external HTTP(S) or TCP/UDP load balancer sits in front of a backend service, which groups instance groups or network endpoint groups (NEGs, including serverless NEGs for Cloud Run) and attaches a health check. Internal load balancers exist for private traffic that must never touch the public internet: internal TCP/UDP for L4 east-west traffic, and the regional internal HTTP(S) (Envoy-based) for L7 features like traffic splitting between microservices inside the VPC. Cloud CDN is not a separate product but a flag on the backend service of a global external HTTPS LB; it caches by default on the full request URL and needs deliberate cache-control or a custom cache key policy to avoid caching per-user responses.",
+            "fr": "Tout équilibreur externe HTTP(S) ou TCP/UDP est adossé à un backend service, qui regroupe des groupes d'instances ou des groupes de terminaux réseau (NEG, y compris les NEG serverless pour Cloud Run) et attache un health check. Les équilibreurs internes existent pour le trafic privé qui ne doit jamais toucher l'internet public : TCP/UDP interne pour le trafic L4 est-ouest, et le HTTP(S) interne régional (basé sur Envoy) pour des fonctions L7 comme le fractionnement de trafic entre microservices dans le VPC. Cloud CDN n'est pas un produit séparé mais une option du backend service d'un LB HTTPS externe global ; il met en cache par défaut sur l'URL complète de la requête et exige un cache-control délibéré ou une politique de clé de cache personnalisée pour éviter de mettre en cache des réponses propres à chaque utilisateur."
+          }
+        },
+        {
+          "type": "code",
+          "code": "gcloud compute backend-services create api-backend \\\n  --global \\\n  --load-balancing-scheme=EXTERNAL_MANAGED \\\n  --protocol=HTTPS \\\n  --health-checks=api-health-check \\\n  --enable-cdn \\\n  --cache-mode=CACHE_ALL_STATIC",
+          "caption": {
+            "en": "CACHE_ALL_STATIC caches only responses that already look cacheable (static extensions, no Set-Cookie); safer default than caching everything.",
+            "fr": "CACHE_ALL_STATIC ne met en cache que les réponses qui semblent déjà cachables (extensions statiques, pas de Set-Cookie) ; un défaut plus sûr que tout mettre en cache."
+          }
+        },
+        {
+          "type": "gotcha",
+          "body": {
+            "en": "Health check probes for external load balancers originate from Google Front End ranges (`35.191.0.0/16` and `130.211.0.0/22`), not from the client IPs you might expect, and a default-deny VPC blocks them unless a firewall rule explicitly allows ingress from those ranges to the target port. The classic symptom is a backend that works perfectly under manual curl but shows 0 of N healthy instances and serves 502s — always the first thing to check before touching application code.",
+            "fr": "Les sondes de health check des équilibreurs externes proviennent des plages Google Front End (`35.191.0.0/16` et `130.211.0.0/22`), pas des IP clientes auxquelles on pourrait s'attendre, et un VPC en deny par défaut les bloque tant qu'une règle de pare-feu n'autorise pas explicitement l'ingress depuis ces plages vers le port ciblé. Le symptôme classique : un backend qui répond parfaitement en curl manuel mais affiche 0 instance saine sur N et sert des 502 — toujours le premier réflexe avant de toucher au code applicatif."
+          }
+        },
+        {
+          "type": "tip",
+          "body": {
+            "en": "Default to the global external Application Load Balancer for anything public-facing: it gives one IP for every region, automatic multi-region failover, Cloud CDN and Cloud Armor in the same object. Reach for regional only when compliance pins traffic to one region, or when the workload genuinely lives in one place and the extra global machinery buys nothing. Internal HTTP(S) load balancing is the right call for service-to-service traffic that needs L7 routing without ever leaving the VPC.",
+            "fr": "Partez par défaut sur l'Application Load Balancer externe global pour tout ce qui est public : une seule IP pour toutes les régions, bascule automatique multi-région, Cloud CDN et Cloud Armor dans le même objet. Ne passez au régional que si la conformité fixe le trafic à une région, ou si la charge vit vraiment à un seul endroit et que la machinerie globale n'apporte rien. Le load balancing HTTP(S) interne est le bon choix pour le trafic service-à-service qui a besoin de routage L7 sans jamais sortir du VPC."
+          }
+        }
+      ]
+    },
+    {
+      "id": "networking-dns",
+      "title": {
+        "en": "Cloud DNS: zones, split-horizon, hybrid resolution",
+        "fr": "Cloud DNS : zones, split-horizon, résolution hybride"
+      },
+      "minutes": 4,
+      "blocks": [
+        {
+          "type": "text",
+          "body": {
+            "en": "A public zone is served by Google's global anycast name servers and is resolvable from anywhere on the internet; a private zone only answers queries that originate from the VPC networks explicitly authorized on it, and its records are invisible to the public internet even if the zone shares a name with a public one. Split-horizon DNS exploits exactly that: create a public zone and a private zone for the same domain (say `api.example.com`), point the public one at the external load balancer IP and the private one at the internal load balancer IP, and the same hostname resolves differently depending on where the query comes from.",
+            "fr": "Une zone publique est servie par les serveurs de noms anycast globaux de Google et résoluble depuis n'importe où sur internet ; une zone privée ne répond qu'aux requêtes issues des réseaux VPC explicitement autorisés dessus, et ses enregistrements sont invisibles depuis l'internet public même si la zone partage un nom avec une zone publique. Le split-horizon DNS exploite exactement cela : créer une zone publique et une zone privée pour le même domaine (disons `api.example.com`), pointer la publique vers l'IP de l'équilibreur externe et la privée vers celle de l'équilibreur interne, et le même nom d'hôte se résout différemment selon l'origine de la requête."
+          }
+        },
+        {
+          "type": "text",
+          "body": {
+            "en": "DNS peering lets a private zone in one VPC answer queries coming from a different VPC network, without merging the two networks the way full VPC peering would — a producer project delegates resolution of a specific zone to consumer VPCs, which is far cheaper than routing all traffic between them. Forwarding zones flow the other way: they send queries for a given domain to name servers reachable over VPN or Interconnect, typically an on-prem Active Directory or BIND server, and are the mechanism that lets GCP resources resolve on-prem hostnames in a hybrid estate.",
+            "fr": "Le peering DNS permet à une zone privée d'un VPC de répondre aux requêtes provenant d'un autre réseau VPC, sans fusionner les deux réseaux comme le ferait un peering VPC complet — un projet producteur délègue la résolution d'une zone donnée à des VPC consommateurs, ce qui coûte bien moins cher que de router tout le trafic entre eux. Les zones de transfert (forwarding) fonctionnent dans l'autre sens : elles envoient les requêtes pour un domaine donné vers des serveurs de noms joignables via VPN ou Interconnect, typiquement un Active Directory ou un serveur BIND on-prem, et sont le mécanisme qui permet aux ressources GCP de résoudre des noms d'hôtes on-prem dans un environnement hybride."
+          }
+        },
+        {
+          "type": "code",
+          "code": "gcloud dns managed-zones create internal-api \\\n  --dns-name=api.internal.example.com. \\\n  --visibility=private \\\n  --networks=prod-vpc \\\n  --description=\"Private zone, resolved only inside prod-vpc\"",
+          "caption": {
+            "en": "Same-looking zone as a public one, but only VMs in prod-vpc can ever query it.",
+            "fr": "Une zone d'apparence identique à une zone publique, mais seules les VM dans prod-vpc peuvent l'interroger."
+          }
+        },
+        {
+          "type": "gotcha",
+          "body": {
+            "en": "Forwarding is one-directional per configuration: setting up a forwarding zone so GCP resources resolve on-prem names says nothing about the reverse. On-prem resolvers need an inbound server policy (which reserves an IP in each subnet to act as a DNS entry point) before they can query GCP private zones. Teams frequently ship the outbound half, declare hybrid DNS \"done\", and discover weeks later that on-prem tooling still cannot resolve any `*.internal` name.",
+            "fr": "Le transfert est unidirectionnel par configuration : mettre en place une zone de transfert pour que les ressources GCP résolvent des noms on-prem ne dit rien du sens inverse. Les résolveurs on-prem ont besoin d'une politique de serveur entrant (qui réserve une IP dans chaque sous-réseau comme point d'entrée DNS) avant de pouvoir interroger les zones privées GCP. Les équipes livrent souvent la moitié sortante, déclarent le DNS hybride « terminé », et découvrent des semaines plus tard que l'outillage on-prem ne résout toujours aucun nom `*.internal`."
+          }
+        },
+        {
+          "type": "tip",
+          "body": {
+            "en": "Split-horizon is also a data-hygiene tool, not just a routing trick: it stops internal service topology (internal load balancer IPs, backend hostnames) from ever appearing in a public zone. Keep TTLs short on any record that will move during a migration (LB cutover, DR failover) — a 3600s TTL on a record you are about to repoint turns a planned cutover into an hour of stale traffic for clients that cached the old answer.",
+            "fr": "Le split-horizon est aussi un outil d'hygiène des données, pas qu'une astuce de routage : il évite que la topologie interne des services (IP d'équilibreurs internes, noms d'hôtes de backends) n'apparaisse jamais dans une zone publique. Gardez des TTL courts sur tout enregistrement amené à bouger pendant une migration (bascule de LB, failover DR) — un TTL de 3600 s sur un enregistrement que vous vous apprêtez à repointer transforme une bascule planifiée en une heure de trafic périmé pour les clients qui ont mis en cache l'ancienne réponse."
+          }
+        }
+      ]
+    },
+    {
+      "id": "networking-hybrid-connectivity",
+      "title": {
+        "en": "Hybrid connectivity: VPN, Interconnect, Cloud Router",
+        "fr": "Connectivité hybride : VPN, Interconnect, Cloud Router"
+      },
+      "minutes": 5,
+      "blocks": [
+        {
+          "type": "text",
+          "body": {
+            "en": "HA VPN encrypts traffic over the public internet through IPsec tunnels; deployed with two interfaces and two tunnels to two peer addresses it carries a 99.99% availability SLA, sets up in minutes, and is capped at roughly 3 Gbps per tunnel (several tunnels can be bonded with equal-cost multipath for more). Dedicated Interconnect is a private physical circuit straight into a Google point of presence at 10 or 100 Gbps, the highest bandwidth and lowest latency option, but it requires physical presence in a Google colocation facility and weeks of provisioning lead time. Partner Interconnect reaches the same private backbone through a supported service provider instead of a direct cross-connect, with bandwidth from 50 Mbps up, and is the answer when the organization cannot reach a Google PoP directly. Cross-Cloud Interconnect is the newest option: a dedicated physical link straight into another cloud provider's network (AWS, Azure, Oracle), bypassing the public internet for genuinely multi-cloud workloads.",
+            "fr": "HA VPN chiffre le trafic sur l'internet public via des tunnels IPsec ; déployé avec deux interfaces et deux tunnels vers deux adresses pairs, il porte un SLA de disponibilité de 99,99 %, se met en place en quelques minutes, et plafonne à environ 3 Gbps par tunnel (plusieurs tunnels peuvent être agrégés en multipath à coût égal pour aller plus loin). Dedicated Interconnect est un circuit physique privé direct vers un point de présence Google à 10 ou 100 Gbps, l'option la plus performante en bande passante et latence, mais elle exige une présence physique dans un site de colocation Google et des semaines de délai de mise en service. Partner Interconnect rejoint le même backbone privé via un fournisseur de services partenaire au lieu d'une interconnexion directe, avec une bande passante à partir de 50 Mbps, et répond au cas où l'organisation ne peut atteindre directement un PoP Google. Cross-Cloud Interconnect est l'option la plus récente : un lien physique dédié direct vers le réseau d'un autre fournisseur cloud (AWS, Azure, Oracle), contournant l'internet public pour des charges réellement multi-cloud."
+          }
+        },
+        {
+          "type": "text",
+          "body": {
+            "en": "Choose by required bandwidth and SLA, in that order: sub-Gbps or backup path, HA VPN; sustained multi-Gbps with a hard latency/SLA requirement and access to a Google facility, Dedicated Interconnect; same bandwidth need without facility access, Partner Interconnect; direct traffic to another cloud at scale, Cross-Cloud Interconnect. Cloud Router is the piece that makes any of these dynamic: it speaks BGP over the VPN tunnel or Interconnect attachment, exchanging routes automatically instead of maintaining static routes by hand, and it is what elects active-active versus active-passive behavior across redundant tunnels or circuits and reacts to a path failure in seconds rather than requiring a manual route change.",
+            "fr": "Choisissez selon la bande passante requise puis le SLA : moins d'1 Gbps ou chemin de secours, HA VPN ; multi-Gbps soutenu avec une exigence stricte de latence/SLA et accès à un site Google, Dedicated Interconnect ; même besoin sans accès à un site, Partner Interconnect ; trafic direct à grande échelle vers un autre cloud, Cross-Cloud Interconnect. Cloud Router est la pièce qui rend chacune de ces options dynamique : il parle BGP sur le tunnel VPN ou le rattachement Interconnect, échangeant les routes automatiquement plutôt que de maintenir des routes statiques à la main, et c'est lui qui arbitre le comportement actif-actif ou actif-passif entre tunnels ou circuits redondants et réagit à une panne de chemin en quelques secondes plutôt que d'exiger un changement de route manuel."
+          }
+        },
+        {
+          "type": "code",
+          "code": "gcloud compute routers create edge-router \\\n  --network=prod-vpc \\\n  --region=europe-west1 \\\n  --asn=65001\n\ngcloud compute routers add-bgp-peer edge-router \\\n  --region=europe-west1 \\\n  --interface=if-tunnel-1 \\\n  --peer-ip-address=169.254.0.2 \\\n  --peer-asn=65002 \\\n  --advertised-route-priority=100",
+          "caption": {
+            "en": "Lower advertised-route-priority wins; pair a second peer with a higher number to model a backup path.",
+            "fr": "La priorité de route annoncée la plus basse gagne ; associez un second pair avec un nombre plus élevé pour modéliser un chemin de secours."
+          }
+        },
+        {
+          "type": "gotcha",
+          "body": {
+            "en": "HA VPN's 99.99% SLA is contractual only when the peer side is also highly available — two tunnels to two distinct peer gateway interfaces. Point both HA VPN interfaces at a single non-redundant on-prem VPN appliance and the SLA is fiction: one device reboot takes down both tunnels simultaneously, which is exactly the failure mode HA VPN was supposed to prevent. Confirm the peer topology before promising the SLA to a client.",
+            "fr": "Le SLA de 99,99 % de HA VPN n'est contractuel que si le côté pair est lui aussi hautement disponible — deux tunnels vers deux interfaces de passerelle pair distinctes. Pointer les deux interfaces HA VPN vers un seul boîtier VPN on-prem non redondant rend le SLA fictif : un redémarrage de l'appareil coupe les deux tunnels simultanément, exactement le mode de panne que HA VPN était censé prévenir. Vérifiez la topologie du côté pair avant de promettre le SLA à un client."
+          }
+        },
+        {
+          "type": "tip",
+          "body": {
+            "en": "A resilient and cost-sensible pattern: Interconnect as the primary path for bandwidth and latency, HA VPN as a BGP-advertised backup with a higher route priority, both under the same Cloud Router. Failover is then a routing event, not a support ticket — no second physical circuit to pay for, and no manual cutover during an outage window.",
+            "fr": "Un motif résilient et raisonnable côté coût : Interconnect en chemin primaire pour la bande passante et la latence, HA VPN en secours annoncé par BGP avec une priorité de route plus élevée, les deux sous le même Cloud Router. Le failover devient alors un événement de routage, pas un ticket de support — pas de second circuit physique à payer, ni de bascule manuelle pendant une fenêtre d'incident."
+          }
+        }
+      ]
+    },
+    {
+      "id": "networking-private-access-egress",
+      "title": {
+        "en": "Private access & egress security",
+        "fr": "Accès privé & sécurité de l'egress"
+      },
+      "minutes": 5,
+      "blocks": [
+        {
+          "type": "text",
+          "body": {
+            "en": "Private Google Access lets VMs and GKE nodes with no external IP reach Google APIs (Cloud Storage, BigQuery, Pub/Sub…) over Google's internal network instead of requiring a public address or a NAT hop — it is a subnet-level flag, not a firewall rule. Private Service Connect goes further: it publishes a service (your own, or a third-party SaaS) as an internal IP address inside the consumer's VPC, so many consumer VPCs can reach one producer service without any VPC peering and, crucially, without the overlapping-CIDR headaches that peering inherits — a very common real-world blocker when connecting a client's VPC to a SaaS vendor's VPC that happens to use the same 10.x range.",
+            "fr": "Private Google Access permet aux VM et nœuds GKE sans IP externe d'atteindre les API Google (Cloud Storage, BigQuery, Pub/Sub…) via le réseau interne de Google plutôt que d'exiger une adresse publique ou un saut par NAT — c'est un indicateur au niveau du sous-réseau, pas une règle de pare-feu. Private Service Connect va plus loin : il publie un service (le vôtre, ou un SaaS tiers) comme une adresse IP interne dans le VPC du consommateur, si bien que de nombreux VPC consommateurs peuvent joindre un service producteur sans aucun peering VPC et, surtout, sans les casse-têtes de CIDR qui se chevauchent qu'hérite le peering — un blocage très courant en conditions réelles quand on connecte le VPC d'un client à celui d'un éditeur SaaS qui utilise justement la même plage 10.x."
+          }
+        },
+        {
+          "type": "text",
+          "body": {
+            "en": "IAM answers \"who can call this API\"; VPC Service Controls answers a different question: \"from where can data leave this perimeter, regardless of who is asking\". A service perimeter wraps a set of projects and APIs (Storage, BigQuery, and dozens more) so that even a valid, correctly-scoped credential that leaks outside the perimeter — stolen key, phished token, misconfigured client — cannot be used to exfiltrate data to an unauthorized network. It is defense in depth layered on top of IAM, not a replacement for it, and it is the standard answer to \"how do you stop a compromised credential from walking data out the door\" in a security-minded interview.",
+            "fr": "IAM répond à « qui peut appeler cette API » ; VPC Service Controls répond à une question différente : « d'où les données peuvent-elles sortir de ce périmètre, quel que soit le demandeur ». Un périmètre de service enveloppe un ensemble de projets et d'API (Storage, BigQuery, et des dizaines d'autres) de sorte que même un identifiant valide et correctement cadré qui fuit hors du périmètre — clé volée, jeton hameçonné, client mal configuré — ne puisse pas servir à exfiltrer des données vers un réseau non autorisé. C'est de la défense en profondeur superposée à IAM, pas un remplacement, et c'est la réponse standard à « comment empêchez-vous un identifiant compromis de faire sortir des données » dans un entretien orienté sécurité."
+          }
+        },
+        {
+          "type": "code",
+          "code": "gcloud compute routers nats create prod-nat \\\n  --router=edge-router \\\n  --region=europe-west1 \\\n  --nat-all-subnet-ip-ranges \\\n  --auto-allocate-nat-external-ips \\\n  --min-ports-per-vm=128",
+          "caption": {
+            "en": "Instances with no external IP get outbound internet through NAT; min-ports-per-vm is the knob to raise before it becomes an incident.",
+            "fr": "Les instances sans IP externe obtiennent une sortie internet via NAT ; min-ports-per-vm est le réglage à relever avant que ça ne devienne un incident."
+          }
+        },
+        {
+          "type": "gotcha",
+          "body": {
+            "en": "Cloud NAT allocates a finite number of source ports per VM from its external IPs (the default is tuned for typical workloads, not chatty ones). An instance opening many concurrent outbound connections — a fan-out to hundreds of downstream hosts, or connection-per-request code that never pools — exhausts its port budget and starts failing new connections silently, logged as `NAT_ALLOCATION_FAILED` if NAT logging happens to be on, invisible otherwise. Fix by raising `min-ports-per-vm`, adding more NAT external IPs, or fixing the connection-pooling bug — usually the last one, in practice.",
+            "fr": "Cloud NAT alloue à chaque VM un nombre fini de ports source depuis ses IP externes (le défaut est calibré pour des charges typiques, pas bavardes). Une instance ouvrant de nombreuses connexions sortantes simultanées — un fan-out vers des centaines d'hôtes en aval, ou du code en connexion-par-requête qui ne poole jamais — épuise son budget de ports et se met à échouer silencieusement sur les nouvelles connexions, journalisé comme `NAT_ALLOCATION_FAILED` si la journalisation NAT est activée, invisible sinon. Le remède : relever `min-ports-per-vm`, ajouter des IP externes NAT, ou corriger le bug de pooling de connexions — en pratique, c'est presque toujours ce dernier."
+          }
+        },
+        {
+          "type": "tip",
+          "body": {
+            "en": "The connectivity checklist that saves a debugging afternoon: Private Google Access needs the right virtual IP for the situation — `private.googleapis.com` for plain private access, `restricted.googleapis.com` when VPC Service Controls is enforced, since the regular private VIP is not compatible with a perimeter. DNS records for Google APIs must point at whichever VIP matches the enforcement state, and a Private Service Connect endpoint deployed without matching firewall rules for its internal IP fails exactly like any other silently-blocked private address.",
+            "fr": "La check-list de connectivité qui évite un après-midi de débogage : Private Google Access a besoin de la bonne IP virtuelle selon la situation — `private.googleapis.com` pour un accès privé simple, `restricted.googleapis.com` quand VPC Service Controls est appliqué, car la VIP privée classique n'est pas compatible avec un périmètre. Les enregistrements DNS des API Google doivent pointer vers la VIP correspondant à l'état d'application, et un point de terminaison Private Service Connect déployé sans les règles de pare-feu correspondant à son IP interne échoue exactement comme n'importe quelle adresse privée bloquée silencieusement."
+          }
+        }
+      ]
+    }
+  ],
+  "flashcards": [
+    {
+      "id": "fc-networking-vpc-scope",
+      "front": {
+        "en": "Are VPC networks and subnets global or regional resources?",
+        "fr": "Les réseaux VPC et les sous-réseaux sont-ils des ressources globales ou régionales ?"
+      },
+      "back": {
+        "en": "The VPC network is global and can span every region without peering. Subnets are regional: each one's IP range is tied to a single region. Expanding to a new region means adding a subnet, not a new network.",
+        "fr": "Le réseau VPC est global et peut couvrir toutes les régions sans peering. Les sous-réseaux sont régionaux : la plage IP de chacun est rattachée à une seule région. Étendre à une nouvelle région, c'est ajouter un sous-réseau, pas un nouveau réseau."
+      }
+    },
+    {
+      "id": "fc-networking-auto-custom",
+      "front": {
+        "en": "Auto mode vs custom mode VPC: what's the difference and which fits production?",
+        "fr": "VPC en mode auto vs personnalisé : quelle différence, et lequel convient en production ?"
+      },
+      "back": {
+        "en": "Auto mode creates one predefined /20 subnet per region automatically — quick but the ranges aren't yours to plan. Custom mode starts empty and requires explicit region/CIDR choices. Custom is the production default once peering, hybrid connectivity or IP planning matter; auto-to-custom conversion is one-way.",
+        "fr": "Le mode auto crée automatiquement un sous-réseau /20 prédéfini par région — rapide, mais les plages ne sont pas planifiées par vous. Le mode personnalisé démarre vide et exige des choix explicites de région/CIDR. Le personnalisé est le défaut en production dès que peering, connectivité hybride ou planification IP comptent ; la conversion auto vers personnalisé est à sens unique."
+      }
+    },
+    {
+      "id": "fc-networking-firewall-priority",
+      "front": {
+        "en": "Default VPC firewall posture, and why prefer service-account targeting over network tags?",
+        "fr": "Posture de pare-feu VPC par défaut, et pourquoi préférer le ciblage par compte de service aux tags réseau ?"
+      },
+      "back": {
+        "en": "Implicit rules deny all ingress and allow all egress (priority 65535); explicit rules run 0 (highest) to 65534. Network tags are plain strings anyone with setTags permission can attach, inheriting whatever rules target them. Service-account targeting requires actAs on that exact account — a real IAM boundary.",
+        "fr": "Les règles implicites refusent tout ingress et autorisent tout egress (priorité 65535) ; les règles explicites vont de 0 (la plus haute) à 65534. Les tags réseau sont de simples chaînes que quiconque a la permission setTags peut attacher, héritant des règles qui les ciblent. Le ciblage par compte de service exige actAs sur ce compte précis — une vraie frontière IAM."
+      }
+    },
+    {
+      "id": "fc-networking-shared-vpc",
+      "front": {
+        "en": "What problem does Shared VPC solve, and how is access granted?",
+        "fr": "Quel problème résout le Shared VPC, et comment l'accès est-il accordé ?"
+      },
+      "back": {
+        "en": "One org, many teams, one network: a host project owns the VPC/subnets, service projects attach and deploy resources into host subnets while keeping their own billing/IAM. Access is granted per subnet via compute.networkUser, avoiding both an unmanageable single project and a peering-stitched VPC per team.",
+        "fr": "Une organisation, plusieurs équipes, un seul réseau : un projet hôte possède le VPC/les sous-réseaux, les projets de service s'y rattachent et y déploient des ressources tout en gardant leur propre facturation/IAM. L'accès est accordé par sous-réseau via compute.networkUser, évitant un projet unique ingérable et un VPC par équipe recousu au peering."
+      }
+    },
+    {
+      "id": "fc-networking-lb-matrix",
+      "front": {
+        "en": "What are the two independent axes for choosing a GCP load balancer?",
+        "fr": "Quels sont les deux axes indépendants pour choisir un équilibreur de charge GCP ?"
+      },
+      "back": {
+        "en": "Layer (L4 passthrough/proxy, protocol-agnostic, cheap vs L7 HTTP(S), host/path routing, needed for CDN and Cloud Armor) and scope (global anycast IP across regions, Premium tier, vs regional, single region, needed for residency or single-region backends).",
+        "fr": "La couche (L4 passthrough/proxy, agnostique au protocole, économique vs L7 HTTP(S), routage hôte/chemin, requis pour CDN et Cloud Armor) et la portée (global, IP anycast multi-région, tier Premium, vs régional, une seule région, requis pour la résidence des données ou des backends mono-région)."
+      }
+    },
+    {
+      "id": "fc-networking-health-check-ranges",
+      "front": {
+        "en": "Which IP ranges must a firewall allow for external load balancer health checks to succeed?",
+        "fr": "Quelles plages IP un pare-feu doit-il autoriser pour que les health checks d'un LB externe réussissent ?"
+      },
+      "back": {
+        "en": "35.191.0.0/16 and 130.211.0.0/22 — the Google Front End probe ranges. A default-deny VPC blocks them silently, producing 0-of-N healthy backends and 502s even though the service works fine under manual curl.",
+        "fr": "35.191.0.0/16 et 130.211.0.0/22 — les plages de sondes Google Front End. Un VPC en deny par défaut les bloque silencieusement, produisant 0 backend sain sur N et des 502 alors même que le service répond parfaitement en curl manuel."
+      }
+    },
+    {
+      "id": "fc-networking-cdn",
+      "front": {
+        "en": "Is Cloud CDN a separate product, and what does it cache by default?",
+        "fr": "Cloud CDN est-il un produit séparé, et que met-il en cache par défaut ?"
+      },
+      "back": {
+        "en": "No — it's a flag on the backend service of a global external HTTPS load balancer. By default it keys the cache on the full request URL, so cache-control headers or an explicit cache-key/cache-mode policy are needed to avoid caching per-user responses.",
+        "fr": "Non — c'est une option du backend service d'un LB HTTPS externe global. Par défaut, la clé de cache est l'URL complète de la requête ; des en-têtes cache-control ou une politique explicite de clé/mode de cache sont nécessaires pour éviter de mettre en cache des réponses propres à chaque utilisateur."
+      }
+    },
+    {
+      "id": "fc-networking-split-horizon",
+      "front": {
+        "en": "What is split-horizon DNS on GCP and what problem does it solve?",
+        "fr": "Qu'est-ce que le DNS split-horizon sur GCP et quel problème résout-il ?"
+      },
+      "back": {
+        "en": "A public zone and a private zone sharing the same domain name, each pointing at a different IP (e.g. external LB vs internal LB). The same hostname resolves differently depending on whether the query originates inside the VPC or from the public internet — and internal topology never leaks into the public zone.",
+        "fr": "Une zone publique et une zone privée partageant le même nom de domaine, chacune pointant vers une IP différente (ex. LB externe vs LB interne). Le même nom d'hôte se résout différemment selon que la requête vient du VPC ou de l'internet public — et la topologie interne ne fuite jamais dans la zone publique."
+      }
+    },
+    {
+      "id": "fc-networking-dns-peering-forwarding",
+      "front": {
+        "en": "DNS peering vs forwarding zones: which direction does each serve?",
+        "fr": "Peering DNS vs zones de transfert : quel sens chacune sert-elle ?"
+      },
+      "back": {
+        "en": "DNS peering lets a private zone in one VPC answer queries from another VPC, cheaper than full VPC peering. Forwarding zones send queries for a domain to name servers reached over VPN/Interconnect (typically on-prem), letting GCP resources resolve on-prem hostnames — the two need to be paired for two-way hybrid resolution.",
+        "fr": "Le peering DNS permet à une zone privée d'un VPC de répondre aux requêtes d'un autre VPC, moins coûteux qu'un peering VPC complet. Les zones de transfert envoient les requêtes d'un domaine vers des serveurs de noms joignables via VPN/Interconnect (typiquement on-prem), permettant aux ressources GCP de résoudre des noms on-prem — les deux doivent être associées pour une résolution hybride bidirectionnelle."
+      }
+    },
+    {
+      "id": "fc-networking-vpn-vs-interconnect",
+      "front": {
+        "en": "Rank HA VPN, Dedicated Interconnect, Partner Interconnect and Cross-Cloud Interconnect by when each fits.",
+        "fr": "Classez HA VPN, Dedicated Interconnect, Partner Interconnect et Cross-Cloud Interconnect selon leur cas d'usage."
+      },
+      "back": {
+        "en": "HA VPN: sub-Gbps or backup path, internet-based, 99.99% SLA with a redundant peer. Dedicated Interconnect: sustained multi-Gbps, lowest latency, needs a Google colocation facility. Partner Interconnect: same bandwidth range without facility access, via a provider. Cross-Cloud Interconnect: dedicated direct link to another cloud provider.",
+        "fr": "HA VPN : moins d'1 Gbps ou secours, via internet, SLA 99,99 % avec un pair redondant. Dedicated Interconnect : multi-Gbps soutenu, latence la plus basse, exige un site de colocation Google. Partner Interconnect : même gamme de bande passante sans accès à un site, via un fournisseur. Cross-Cloud Interconnect : lien direct dédié vers un autre fournisseur cloud."
+      }
+    },
+    {
+      "id": "fc-networking-cloud-router-bgp",
+      "front": {
+        "en": "What does Cloud Router add on top of a VPN tunnel or Interconnect attachment?",
+        "fr": "Qu'apporte Cloud Router en plus d'un tunnel VPN ou d'un rattachement Interconnect ?"
+      },
+      "back": {
+        "en": "Dynamic route exchange via BGP instead of static routes maintained by hand; it elects active-active vs active-passive behavior across redundant paths (via advertised-route-priority) and reacts to a failure in seconds — required for HA VPN's SLA and for Interconnect/VPN failover pairs.",
+        "fr": "L'échange dynamique de routes via BGP au lieu de routes statiques maintenues à la main ; il arbitre le comportement actif-actif ou actif-passif entre chemins redondants (via advertised-route-priority) et réagit à une panne en quelques secondes — requis pour le SLA de HA VPN et pour les paires de failover Interconnect/VPN."
+      }
+    },
+    {
+      "id": "fc-networking-private-google-access-psc",
+      "front": {
+        "en": "Private Google Access vs Private Service Connect: what does each avoid?",
+        "fr": "Private Google Access vs Private Service Connect : qu'évite chacun ?"
+      },
+      "back": {
+        "en": "Private Google Access lets IP-less VMs reach Google APIs over Google's internal network, avoiding a public IP or NAT hop. Private Service Connect publishes any service (yours or third-party) as an internal IP in the consumer VPC, avoiding VPC peering and its overlapping-CIDR problems for many-to-one SaaS patterns.",
+        "fr": "Private Google Access permet à des VM sans IP d'atteindre les API Google via le réseau interne de Google, évitant une IP publique ou un saut par NAT. Private Service Connect publie n'importe quel service (le vôtre ou un tiers) comme une IP interne dans le VPC consommateur, évitant le peering VPC et ses problèmes de CIDR chevauchants pour des schémas SaaS many-to-one."
+      }
+    },
+    {
+      "id": "fc-networking-vpc-sc",
+      "front": {
+        "en": "What question does VPC Service Controls answer that IAM does not?",
+        "fr": "À quelle question VPC Service Controls répond-il, que IAM ne couvre pas ?"
+      },
+      "back": {
+        "en": "IAM answers who can call an API. VPC-SC answers where data can leave a perimeter, regardless of who is asking — so a leaked but valid credential (stolen key, phished token) still cannot exfiltrate data outside the perimeter. It's defense in depth on top of IAM, not a replacement.",
+        "fr": "IAM répond à qui peut appeler une API. VPC-SC répond à d'où les données peuvent sortir d'un périmètre, quel que soit le demandeur — ainsi un identifiant valide mais fuité (clé volée, jeton hameçonné) ne peut toujours pas exfiltrer de données hors du périmètre. C'est de la défense en profondeur sur IAM, pas un remplacement."
+      }
+    },
+    {
+      "id": "fc-networking-cloud-nat",
+      "front": {
+        "en": "What does Cloud NAT do, and what is its most common silent failure mode?",
+        "fr": "Que fait Cloud NAT, et quel est son mode de panne silencieux le plus courant ?"
+      },
+      "back": {
+        "en": "It gives outbound-only internet access to instances with no external IP by translating through shared external IPs. Each VM gets a finite port budget (min-ports-per-vm); heavy fan-out or unpooled per-request connections exhaust it, failing new connections silently unless NAT logging is enabled.",
+        "fr": "Il donne un accès internet sortant uniquement aux instances sans IP externe en traduisant via des IP externes partagées. Chaque VM reçoit un budget de ports fini (min-ports-per-vm) ; un fan-out important ou des connexions par requête non poolées l'épuisent, faisant échouer silencieusement les nouvelles connexions sauf si la journalisation NAT est activée."
+      }
+    }
+  ],
+  "exercises": [
+    {
+      "id": "ex-networking-shared-vpc-choice",
+      "kind": "mcq",
+      "prompt": {
+        "en": "An organization has 6 product teams, each with its own GCP project, that all need to reach a common set of on-prem services and share consistent firewall/network policy without losing project-level billing separation. Best approach?",
+        "fr": "Une organisation a 6 équipes produit, chacune avec son propre projet GCP, qui doivent toutes atteindre un ensemble commun de services on-prem et partager une politique réseau/pare-feu cohérente, sans perdre la séparation de facturation par projet. Meilleure approche ?"
+      },
+      "choices": [
+        {
+          "id": "a",
+          "label": {
+            "en": "Give each team its own VPC and peer all 6 VPCs together",
+            "fr": "Donner à chaque équipe son propre VPC et peerer les 6 VPC entre eux"
+          }
+        },
+        {
+          "id": "b",
+          "label": {
+            "en": "Shared VPC: one host project with the network, 6 service projects attached",
+            "fr": "Shared VPC : un projet hôte avec le réseau, 6 projets de service rattachés"
+          }
+        },
+        {
+          "id": "c",
+          "label": {
+            "en": "Merge all 6 teams into a single GCP project",
+            "fr": "Fusionner les 6 équipes dans un seul projet GCP"
+          }
+        },
+        {
+          "id": "d",
+          "label": {
+            "en": "Give each team a public IP range and route between them over the internet",
+            "fr": "Donner à chaque équipe une plage IP publique et router entre elles via internet"
+          }
+        }
+      ],
+      "answerId": "b",
+      "explanation": {
+        "en": "Shared VPC is designed exactly for this: one host project centralizes the network, hybrid connectivity and firewall policy, while service projects keep their own billing and IAM. Peering 6 VPCs (a) creates a mesh of non-transitive links and duplicated hybrid connectivity per VPC; merging projects (c) destroys the billing separation the requirement demands; routing over the internet (d) drops both security and the private connectivity requirement entirely.",
+        "fr": "Le Shared VPC est conçu exactement pour cela : un projet hôte centralise le réseau, la connectivité hybride et la politique de pare-feu, tandis que les projets de service gardent leur propre facturation et IAM. Peerer 6 VPC (a) crée un maillage de liens non transitifs et duplique la connectivité hybride par VPC ; fusionner les projets (c) détruit la séparation de facturation exigée ; router via internet (d) abandonne à la fois la sécurité et l'exigence de connectivité privée."
+      },
+      "difficulty": 1
+    },
+    {
+      "id": "ex-networking-firewall-bug",
+      "kind": "find-bug",
+      "prompt": {
+        "en": "A security review flags that any engineer can SSH into `payments-db`, a VM that should only accept SSH from the CI service account. Find the design flaw in this firewall rule.",
+        "fr": "Une revue de sécurité signale que n'importe quel ingénieur peut se connecter en SSH à `payments-db`, une VM qui ne devrait accepter le SSH que du compte de service CI. Trouvez le défaut de conception dans cette règle de pare-feu."
+      },
+      "code": "gcloud compute firewall-rules create allow-ssh-payments \\\n  --network=prod-vpc \\\n  --direction=INGRESS \\\n  --action=ALLOW \\\n  --rules=tcp:22 \\\n  --source-ranges=10.0.0.0/8 \\\n  --target-tags=payments-tier\n\n# payments-db instance has network tag: payments-tier",
+      "choices": [
+        {
+          "id": "a",
+          "label": {
+            "en": "tcp:22 should be tcp:2222 for SSH",
+            "fr": "tcp:22 devrait être tcp:2222 pour SSH"
+          }
+        },
+        {
+          "id": "b",
+          "label": {
+            "en": "The rule targets a network tag, which any engineer with setTags permission can attach to their own VM to gain the same access",
+            "fr": "La règle cible un tag réseau, que tout ingénieur ayant la permission setTags peut attacher à sa propre VM pour obtenir le même accès"
+          }
+        },
+        {
+          "id": "c",
+          "label": {
+            "en": "source-ranges=10.0.0.0/8 is too small and should be 0.0.0.0/0",
+            "fr": "source-ranges=10.0.0.0/8 est trop restreint et devrait être 0.0.0.0/0"
+          }
+        },
+        {
+          "id": "d",
+          "label": {
+            "en": "Firewall rules cannot restrict SSH, only IAM can",
+            "fr": "Les règles de pare-feu ne peuvent pas restreindre le SSH, seul IAM le peut"
+          }
+        }
+      ],
+      "answerId": "b",
+      "explanation": {
+        "en": "Network tags carry no access control of their own: any engineer who can create or edit a VM with compute.instances.setTags can attach `payments-tier` and inherit this rule's access, regardless of who they are. The fix is to target by service account (`--target-service-accounts`) and restrict `iam.serviceAccounts.actAs` on that account to the CI pipeline's identity, plus scoping source-ranges tighter than the whole internal /8 if possible.",
+        "fr": "Les tags réseau ne portent aucun contrôle d'accès propre : tout ingénieur pouvant créer ou modifier une VM avec compute.instances.setTags peut attacher `payments-tier` et hériter de l'accès de cette règle, quelle que soit son identité. Le correctif consiste à cibler par compte de service (`--target-service-accounts`) et à restreindre `iam.serviceAccounts.actAs` sur ce compte à l'identité du pipeline CI, en plus de resserrer source-ranges au-delà du /8 interne complet si possible."
+      },
+      "difficulty": 2
+    },
+    {
+      "id": "ex-networking-lb-choice",
+      "kind": "mcq",
+      "prompt": {
+        "en": "A SaaS product serves users across Europe, North America and Asia from backends deployed in 3 regions, needs a single public hostname, and wants edge caching for static assets. Which load balancer type fits?",
+        "fr": "Un produit SaaS sert des utilisateurs en Europe, en Amérique du Nord et en Asie depuis des backends déployés dans 3 régions, a besoin d'un seul nom d'hôte public, et veut du cache en périphérie pour les assets statiques. Quel type d'équilibreur convient ?"
+      },
+      "choices": [
+        {
+          "id": "a",
+          "label": {
+            "en": "Regional external Application Load Balancer, one per region",
+            "fr": "Application Load Balancer externe régional, un par région"
+          }
+        },
+        {
+          "id": "b",
+          "label": {
+            "en": "Global external Application Load Balancer with Cloud CDN enabled",
+            "fr": "Application Load Balancer externe global avec Cloud CDN activé"
+          }
+        },
+        {
+          "id": "c",
+          "label": {
+            "en": "Internal TCP/UDP load balancer with DNS round robin across regions",
+            "fr": "Équilibreur TCP/UDP interne avec round robin DNS entre régions"
+          }
+        },
+        {
+          "id": "d",
+          "label": {
+            "en": "Cloud NAT in front of each regional backend",
+            "fr": "Cloud NAT devant chaque backend régional"
+          }
+        }
+      ],
+      "answerId": "b",
+      "explanation": {
+        "en": "The global external Application Load Balancer gives one anycast IP for all three regions, routes each user to the nearest healthy backend, and supports Cloud CDN natively on the same backend service — exactly the requirement set. Three regional LBs (a) would need separate IPs and manual geo-routing; internal LB with DNS round robin (c) is neither public nor health-aware failover; Cloud NAT (d) is for egress, not inbound traffic distribution.",
+        "fr": "L'Application Load Balancer externe global offre une seule IP anycast pour les trois régions, route chaque utilisateur vers le backend sain le plus proche, et prend en charge Cloud CDN nativement sur le même backend service — exactement ce qui est demandé. Trois LB régionaux (a) exigeraient des IP séparées et un géo-routage manuel ; un LB interne avec round robin DNS (c) n'est ni public ni conscient de la santé des backends ; Cloud NAT (d) sert l'egress, pas la distribution du trafic entrant."
+      },
+      "difficulty": 2
+    },
+    {
+      "id": "ex-networking-health-check-bug",
+      "kind": "find-bug",
+      "prompt": {
+        "en": "A global external HTTPS load balancer reports 0 of 3 healthy backends and clients get 502s, even though `curl` from a bastion inside the VPC to each instance succeeds on the health check path. Find the bug.",
+        "fr": "Un LB HTTPS externe global rapporte 0 backend sain sur 3 et les clients reçoivent des 502, alors qu'un `curl` depuis un bastion dans le VPC vers chaque instance réussit sur le chemin du health check. Trouvez le bug."
+      },
+      "code": "gcloud compute firewall-rules create allow-internal \\\n  --network=prod-vpc \\\n  --direction=INGRESS \\\n  --action=ALLOW \\\n  --rules=tcp:80,tcp:443 \\\n  --source-ranges=10.0.0.0/8\n\ngcloud compute health-checks create http api-hc \\\n  --port=80 \\\n  --request-path=/healthz",
+      "choices": [
+        {
+          "id": "a",
+          "label": {
+            "en": "The health check path should be / instead of /healthz",
+            "fr": "Le chemin du health check devrait être / au lieu de /healthz"
+          }
+        },
+        {
+          "id": "b",
+          "label": {
+            "en": "The firewall only allows 10.0.0.0/8; it never allows the Google Front End probe ranges 35.191.0.0/16 and 130.211.0.0/22 that actually send the health checks",
+            "fr": "Le pare-feu n'autorise que 10.0.0.0/8 ; il n'autorise jamais les plages de sonde Google Front End 35.191.0.0/16 et 130.211.0.0/22 qui envoient réellement les health checks"
+          }
+        },
+        {
+          "id": "c",
+          "label": {
+            "en": "Health checks require HTTPS, not HTTP, for a global LB",
+            "fr": "Les health checks exigent HTTPS, pas HTTP, pour un LB global"
+          }
+        },
+        {
+          "id": "d",
+          "label": {
+            "en": "The backend service is missing --enable-cdn",
+            "fr": "Le backend service n'a pas --enable-cdn"
+          }
+        }
+      ],
+      "answerId": "b",
+      "explanation": {
+        "en": "Health check probes for external load balancers come from Google's own front-end ranges, not from inside the VPC — a bastion's successful curl proves the app works but says nothing about whether GFE can reach it. The firewall here only opens 10.0.0.0/8, so every probe is silently dropped, every backend reads unhealthy, and the LB has nowhere to send traffic. Adding an ingress rule for 35.191.0.0/16 and 130.211.0.0/22 on tcp:80 fixes it; CDN is unrelated to backend health.",
+        "fr": "Les sondes de health check des LB externes viennent des plages front-end propres à Google, pas de l'intérieur du VPC — un curl réussi depuis un bastion prouve que l'appli fonctionne mais ne dit rien sur la capacité de GFE à la joindre. Ici, le pare-feu n'ouvre que 10.0.0.0/8, donc chaque sonde est silencieusement rejetée, chaque backend est jugé malsain, et le LB n'a nulle part où envoyer le trafic. Ajouter une règle d'ingress pour 35.191.0.0/16 et 130.211.0.0/22 sur tcp:80 corrige le problème ; le CDN n'a aucun rapport avec la santé des backends."
+      },
+      "difficulty": 2
+    },
+    {
+      "id": "ex-networking-dns-predict",
+      "kind": "predict-output",
+      "prompt": {
+        "en": "Given this split-horizon setup, what does a laptop on the corporate VPN (with routes into prod-vpc) resolve for `api.example.com`, versus a phone on public 4G?",
+        "fr": "Avec cette configuration split-horizon, que résout un ordinateur portable sur le VPN d'entreprise (avec des routes vers prod-vpc) pour `api.example.com`, contre un téléphone en 4G public ?"
+      },
+      "code": "# Public zone \"example-public\" (visibility=public)\napi.example.com. A 34.120.10.5   # external HTTPS LB IP\n\n# Private zone \"example-private\" (visibility=private, networks=[prod-vpc])\napi.example.com. A 10.10.0.20    # internal HTTP(S) LB IP",
+      "choices": [
+        {
+          "id": "a",
+          "label": {
+            "en": "Both resolve to 34.120.10.5, private zones never override public ones",
+            "fr": "Les deux résolvent vers 34.120.10.5, les zones privées ne prennent jamais le pas sur les zones publiques"
+          }
+        },
+        {
+          "id": "b",
+          "label": {
+            "en": "The VPN laptop (querying via prod-vpc's resolver) gets 10.10.0.20; the 4G phone gets 34.120.10.5",
+            "fr": "Le portable VPN (interrogeant via le résolveur de prod-vpc) obtient 10.10.0.20 ; le téléphone en 4G obtient 34.120.10.5"
+          }
+        },
+        {
+          "id": "c",
+          "label": {
+            "en": "Both resolve to 10.10.0.20 because the private zone was created more recently",
+            "fr": "Les deux résolvent vers 10.10.0.20 car la zone privée a été créée plus récemment"
+          }
+        },
+        {
+          "id": "d",
+          "label": {
+            "en": "The query fails with NXDOMAIN because the same name exists in two zones",
+            "fr": "La requête échoue en NXDOMAIN car le même nom existe dans deux zones"
+          }
+        }
+      ],
+      "answerId": "b",
+      "explanation": {
+        "en": "Split-horizon works because visibility, not recency or precedence rules, decides which zone answers: the private zone only answers queries that resolve through a name server reachable from an authorized VPC (here prod-vpc, which the VPN client routes into), everyone else — including the same hostname queried from the public internet — gets the public zone's answer. Having the same name in both zones is the intended pattern, not a conflict.",
+        "fr": "Le split-horizon fonctionne car c'est la visibilité, pas la récence ou une règle de précédence, qui décide quelle zone répond : la zone privée ne répond qu'aux requêtes résolues via un serveur de noms joignable depuis un VPC autorisé (ici prod-vpc, vers lequel le client VPN route), tous les autres — y compris le même nom interrogé depuis l'internet public — reçoivent la réponse de la zone publique. Avoir le même nom dans les deux zones est le motif recherché, pas un conflit."
+      },
+      "difficulty": 2
+    },
+    {
+      "id": "ex-networking-hybrid-choice",
+      "kind": "mcq",
+      "prompt": {
+        "en": "A client needs to migrate 40 TB of data monthly plus run latency-sensitive database replication between an on-prem data center and GCP, with a contractual 99.99% uptime target, but has no ability to get a cross-connect into a Google colocation facility themselves. Best hybrid connectivity choice?",
+        "fr": "Un client doit migrer 40 To de données par mois et faire tourner une réplication de base de données sensible à la latence entre un datacenter on-prem et GCP, avec un objectif contractuel de disponibilité de 99,99 %, mais ne peut pas obtenir lui-même une interconnexion dans un site de colocation Google. Meilleur choix de connectivité hybride ?"
+      },
+      "choices": [
+        {
+          "id": "a",
+          "label": {
+            "en": "A single HA VPN tunnel, since it's the fastest to set up",
+            "fr": "Un seul tunnel HA VPN, car c'est le plus rapide à mettre en place"
+          }
+        },
+        {
+          "id": "b",
+          "label": {
+            "en": "Dedicated Interconnect, arranging a temporary colocation visit for setup",
+            "fr": "Dedicated Interconnect, en organisant une visite temporaire en colocation pour l'installation"
+          }
+        },
+        {
+          "id": "c",
+          "label": {
+            "en": "Partner Interconnect through a supported service provider, sized for the sustained throughput and latency needs",
+            "fr": "Partner Interconnect via un fournisseur de services partenaire, dimensionné pour le débit soutenu et les besoins de latence"
+          }
+        },
+        {
+          "id": "d",
+          "label": {
+            "en": "Cross-Cloud Interconnect, since it offers the highest bandwidth",
+            "fr": "Cross-Cloud Interconnect, car il offre la plus grande bande passante"
+          }
+        }
+      ],
+      "answerId": "c",
+      "explanation": {
+        "en": "The bandwidth and latency profile (sustained multi-TB monthly transfer, latency-sensitive replication) rules out plain HA VPN (a) — its per-tunnel cap and internet-path latency variance don't fit database replication, and a single tunnel also can't reach a 99.99% SLA. Dedicated Interconnect (b) needs physical presence in a Google facility, which the constraint explicitly rules out — colocation access isn't something you casually arrange for one connection. Cross-Cloud Interconnect (d) connects directly to another cloud provider, not an on-prem data center, so it doesn't apply here. Partner Interconnect delivers the same private backbone and can be built to the required bandwidth via a provider, without needing direct facility access — the correct fit.",
+        "fr": "Le profil de bande passante et de latence (transfert soutenu de plusieurs To par mois, réplication sensible à la latence) écarte le simple HA VPN (a) — son plafond par tunnel et la variance de latence du chemin internet ne conviennent pas à la réplication de base de données, et un seul tunnel ne peut de toute façon pas atteindre un SLA de 99,99 %. Dedicated Interconnect (b) exige une présence physique dans un site Google, ce que la contrainte exclut explicitement — l'accès à la colocation ne s'organise pas à la légère pour une seule connexion. Cross-Cloud Interconnect (d) connecte directement à un autre fournisseur cloud, pas à un datacenter on-prem, donc ne s'applique pas ici. Partner Interconnect offre le même backbone privé et peut être dimensionné à la bande passante requise via un fournisseur, sans nécessiter d'accès direct à un site — le bon choix."
+      },
+      "difficulty": 3
+    },
+    {
+      "id": "ex-networking-nat-predict",
+      "kind": "predict-output",
+      "prompt": {
+        "en": "A fleet of 5 Cloud NAT-backed VMs (min-ports-per-vm=64, no external IPs) each open ~2000 short-lived outbound HTTPS connections per minute to hundreds of distinct third-party hosts, with NAT logging disabled. What do application logs show when the port budget is exceeded?",
+        "fr": "Une flotte de 5 VM derrière Cloud NAT (min-ports-per-vm=64, sans IP externe) ouvre chacune ~2000 connexions HTTPS sortantes de courte durée par minute vers des centaines d'hôtes tiers distincts, avec la journalisation NAT désactivée. Que montrent les logs applicatifs quand le budget de ports est dépassé ?"
+      },
+      "code": "gcloud compute routers nats create prod-nat \\\n  --router=edge-router --region=europe-west1 \\\n  --nat-all-subnet-ip-ranges \\\n  --auto-allocate-nat-external-ips \\\n  --min-ports-per-vm=64",
+      "choices": [
+        {
+          "id": "a",
+          "label": {
+            "en": "A clear 'NAT port exhausted' error returned to the application",
+            "fr": "Une erreur claire 'NAT port exhausted' renvoyée à l'application"
+          }
+        },
+        {
+          "id": "b",
+          "label": {
+            "en": "New outbound connections fail (timeouts/connection errors) with no explicit cause in application logs, since NAT allocation failures aren't surfaced without NAT logging enabled",
+            "fr": "Les nouvelles connexions sortantes échouent (timeouts/erreurs de connexion) sans cause explicite dans les logs applicatifs, les échecs d'allocation NAT n'étant pas remontés sans la journalisation NAT activée"
+          }
+        },
+        {
+          "id": "c",
+          "label": {
+            "en": "Cloud NAT automatically raises min-ports-per-vm to compensate",
+            "fr": "Cloud NAT relève automatiquement min-ports-per-vm pour compenser"
+          }
+        },
+        {
+          "id": "d",
+          "label": {
+            "en": "Existing connections are dropped to free ports for new ones, with no failures",
+            "fr": "Les connexions existantes sont coupées pour libérer des ports pour les nouvelles, sans aucun échec"
+          }
+        }
+      ],
+      "answerId": "b",
+      "explanation": {
+        "en": "Cloud NAT does not surface allocation failures to the application layer at all — the application simply experiences connection timeouts or resets, indistinguishable at first glance from a downstream outage, unless NAT logging is explicitly enabled to see NAT_ALLOCATION_FAILED entries. Cloud NAT never auto-tunes min-ports-per-vm and never proactively evicts healthy connections to make room; the fix is raising min-ports-per-vm, adding NAT IPs, or fixing connection reuse, diagnosed only by turning logging on first.",
+        "fr": "Cloud NAT ne remonte jamais les échecs d'allocation à la couche applicative — l'application subit simplement des timeouts ou des resets de connexion, indiscernables au premier abord d'une panne en aval, sauf si la journalisation NAT est explicitement activée pour voir les entrées NAT_ALLOCATION_FAILED. Cloud NAT n'auto-ajuste jamais min-ports-per-vm et n'évince jamais proactivement des connexions saines pour faire de la place ; le correctif consiste à relever min-ports-per-vm, ajouter des IP NAT, ou corriger la réutilisation de connexions, diagnostiqué seulement après avoir activé la journalisation."
+      },
+      "difficulty": 2
+    },
+    {
+      "id": "ex-networking-vpc-sc-mcq",
+      "kind": "mcq",
+      "prompt": {
+        "en": "A developer's laptop is compromised and an attacker exfiltrates a valid, correctly-scoped service account key with BigQuery read access. The organization's BigQuery datasets sit inside a VPC Service Controls perimeter that only permits access from the corporate office IP range and specific VPCs. What happens when the attacker tries to use the stolen key from their own machine?",
+        "fr": "Le portable d'un développeur est compromis et un attaquant exfiltre une clé de compte de service valide et correctement cadrée, avec accès en lecture BigQuery. Les jeux de données BigQuery de l'organisation se trouvent dans un périmètre VPC Service Controls qui n'autorise l'accès que depuis la plage IP du bureau et des VPC spécifiques. Que se passe-t-il quand l'attaquant tente d'utiliser la clé volée depuis sa propre machine ?"
+      },
+      "choices": [
+        {
+          "id": "a",
+          "label": {
+            "en": "Access succeeds because IAM already validated the key is legitimate",
+            "fr": "L'accès réussit car IAM a déjà validé que la clé est légitime"
+          }
+        },
+        {
+          "id": "b",
+          "label": {
+            "en": "Access is denied by the perimeter, because the request originates outside the allowed access levels regardless of the key's validity",
+            "fr": "L'accès est refusé par le périmètre, car la requête provient hors des niveaux d'accès autorisés, indépendamment de la validité de la clé"
+          }
+        },
+        {
+          "id": "c",
+          "label": {
+            "en": "Access succeeds but is rate-limited",
+            "fr": "L'accès réussit mais est limité en débit"
+          }
+        },
+        {
+          "id": "d",
+          "label": {
+            "en": "VPC Service Controls only applies to Compute Engine, not BigQuery",
+            "fr": "VPC Service Controls ne s'applique qu'à Compute Engine, pas à BigQuery"
+          }
+        }
+      ],
+      "answerId": "b",
+      "explanation": {
+        "en": "This is precisely the scenario VPC Service Controls is built for: IAM's job stops at confirming the credential is valid and scoped correctly, which it is here. VPC-SC layers a second, context-aware check on top — the perimeter's access levels evaluate where the request comes from, and a request from an unauthorized network is denied even with a perfectly valid credential. BigQuery is one of the most commonly protected services in a perimeter, alongside Cloud Storage and others; it's not Compute-only.",
+        "fr": "C'est précisément le scénario pour lequel VPC Service Controls est conçu : le rôle d'IAM s'arrête à confirmer que l'identifiant est valide et correctement cadré, ce qui est le cas ici. VPC-SC superpose une seconde vérification contextuelle — les niveaux d'accès du périmètre évaluent d'où vient la requête, et une requête depuis un réseau non autorisé est refusée même avec un identifiant parfaitement valide. BigQuery est l'un des services les plus couramment protégés dans un périmètre, aux côtés de Cloud Storage et d'autres ; ce n'est pas réservé à Compute."
+      },
+      "difficulty": 2
+    }
+  ]
+}

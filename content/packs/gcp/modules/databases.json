@@ -1,0 +1,755 @@
+{
+  "id": "databases",
+  "title": { "en": "Databases", "fr": "Bases de données" },
+  "tagline": {
+    "en": "Cloud SQL, Spanner, Firestore, Bigtable, AlloyDB",
+    "fr": "Cloud SQL, Spanner, Firestore, Bigtable, AlloyDB"
+  },
+  "icon": "🛢️",
+  "lessons": [
+    {
+      "id": "databases-landscape",
+      "title": {
+        "en": "The relational landscape: Cloud SQL, AlloyDB, Spanner",
+        "fr": "Le paysage relationnel : Cloud SQL, AlloyDB, Spanner"
+      },
+      "minutes": 6,
+      "blocks": [
+        {
+          "type": "text",
+          "body": {
+            "en": "Three services fight for the same 'I need SQL' request, and picking wrong is expensive to unwind. Cloud SQL is managed MySQL, PostgreSQL or SQL Server: familiar engines, familiar tooling, a single primary that scales vertically up to a hard ceiling (currently 128 vCPU / ~864 GB RAM class instances). AlloyDB is PostgreSQL-compatible but re-engineered by Google: a disaggregated storage layer and an in-memory columnar engine give it HTAP characteristics — fast transactional writes and fast analytical scans on the same data, without an ETL pipeline to a warehouse. Spanner abandons the single-primary model entirely: it shards and replicates across zones or continents while still exposing SQL and ACID transactions.",
+            "fr": "Trois services se disputent la même demande « il me faut du SQL », et un mauvais choix coûte cher à corriger. Cloud SQL, c'est du MySQL, PostgreSQL ou SQL Server managé : moteurs et outillage familiers, un primaire unique qui ne scale que verticalement jusqu'à un plafond dur (actuellement des instances classe 128 vCPU / ~864 Go de RAM). AlloyDB est compatible PostgreSQL mais réingénié par Google : une couche de stockage désagrégée et un moteur colonnaire en mémoire lui donnent des caractéristiques HTAP — écritures transactionnelles rapides et scans analytiques rapides sur les mêmes données, sans pipeline ETL vers un entrepôt. Spanner abandonne totalement le modèle à primaire unique : il partitionne et réplique entre zones ou continents tout en exposant SQL et des transactions ACID."
+          }
+        },
+        {
+          "type": "text",
+          "body": {
+            "en": "The default-choice heuristic a senior engineer states out loud: start with Cloud SQL unless you already know why not. It covers the overwhelming majority of transactional workloads at a fraction of Spanner's operational and cost complexity. Reach for AlloyDB when the same database must serve both OLTP traffic and real-time analytics/reporting (dashboards hitting live data) without a separate BigQuery pipeline, or when Cloud SQL's vertical ceiling and failover times are becoming a real constraint on a Postgres-shaped workload. Reach for Spanner only when you have a genuine multi-region consistency requirement or a write-throughput need Cloud SQL/AlloyDB cannot vertically absorb — global inventory, financial ledgers, multi-region SaaS with strict consistency.",
+            "fr": "L'heuristique de choix par défaut qu'un ingénieur senior énonce à voix haute : partez de Cloud SQL sauf si vous savez déjà pourquoi pas. Il couvre l'écrasante majorité des charges transactionnelles pour une fraction de la complexité opérationnelle et tarifaire de Spanner. Tournez-vous vers AlloyDB quand la même base doit servir à la fois du trafic OLTP et de l'analytique/reporting temps réel (dashboards sur données live) sans pipeline BigQuery séparé, ou quand le plafond vertical et les temps de failover de Cloud SQL deviennent une vraie contrainte sur une charge de forme Postgres. Ne visez Spanner que face à un vrai besoin de cohérence multi-région ou un débit d'écriture que Cloud SQL/AlloyDB ne peuvent absorber verticalement — inventaire mondial, grands livres financiers, SaaS multi-région à cohérence stricte."
+          }
+        },
+        {
+          "type": "code",
+          "code": "# Cloud SQL: familiar, vertical, single-region primary\ngcloud sql instances create orders-db \\\n  --database-version=POSTGRES_15 \\\n  --tier=db-custom-8-32768 \\\n  --region=europe-west1 \\\n  --availability-type=REGIONAL\n\n# AlloyDB: same Postgres wire protocol, HTAP engine underneath\ngcloud alloydb clusters create orders-cluster \\\n  --region=europe-west1 --network=default\ngcloud alloydb instances create orders-primary \\\n  --cluster=orders-cluster --region=europe-west1 \\\n  --instance-type=PRIMARY --cpu-count=8",
+          "caption": {
+            "en": "Same client driver, same SQL: the difference is entirely in the storage and replication engine underneath.",
+            "fr": "Même driver client, même SQL : la différence est entièrement dans le moteur de stockage et de réplication sous-jacent."
+          }
+        },
+        {
+          "type": "gotcha",
+          "body": {
+            "en": "AlloyDB and Cloud SQL both speak PostgreSQL wire protocol, which tempts teams into treating them as interchangeable. They are not free migrations either direction: AlloyDB requires its own cluster/instance model (primary + read pools, not read replicas), different pricing (compute + storage + optional columnar engine), and its HA model (regional, transparent failover) is not simply 'Cloud SQL with extras'. Test the actual migration path (dump/restore or Database Migration Service) before promising a weekend cutover.",
+            "fr": "AlloyDB et Cloud SQL parlent tous deux le protocole PostgreSQL, ce qui tente les équipes à les croire interchangeables. Ce ne sont pas des migrations gratuites dans un sens ni dans l'autre : AlloyDB impose son propre modèle cluster/instance (primaire + read pools, pas des read replicas classiques), une tarification différente (calcul + stockage + moteur colonnaire optionnel), et son modèle HA (régional, failover transparent) n'est pas simplement « Cloud SQL avec des extras ». Testez le vrai chemin de migration (dump/restore ou Database Migration Service) avant de promettre une bascule en un week-end."
+          }
+        },
+        {
+          "type": "tip",
+          "body": {
+            "en": "\"Why not just use Spanner everywhere, it's Google's best database\" is a trap answer waiting to happen. The honest senior answer: Spanner trades away the cheap single-node case entirely — you pay for distributed consensus and TrueTime infrastructure whether you need global scale or not, and schema design (interleaving, key choice) becomes a first-class engineering problem. Recommending Spanner for a 50-req/sec regional app signals cargo-culting, not expertise.",
+            "fr": "« Pourquoi ne pas utiliser Spanner partout, c'est la meilleure base de Google » est une réponse piège qui guette. La vraie réponse de senior : Spanner sacrifie entièrement le cas mono-nœud bon marché — vous payez l'infrastructure de consensus distribué et TrueTime que vous ayez besoin d'échelle mondiale ou non, et la conception du schéma (interleaving, choix de clé) devient un problème d'ingénierie de premier ordre. Recommander Spanner pour une appli régionale à 50 req/s trahit le suivisme technologique, pas l'expertise."
+          }
+        }
+      ]
+    },
+    {
+      "id": "databases-cloud-sql-ops",
+      "title": {
+        "en": "Cloud SQL operations: HA, replicas, backups, connections",
+        "fr": "Exploitation Cloud SQL : HA, réplicas, sauvegardes, connexions"
+      },
+      "minutes": 6,
+      "blocks": [
+        {
+          "type": "text",
+          "body": {
+            "en": "Regional (HA) Cloud SQL provisions a standby replica in a different zone of the same region, kept in sync via semi-synchronous replication; on failure, Cloud SQL automatically promotes the standby and repoints the same connection endpoint, typically within about 60 seconds. This is not a read replica: it is invisible, unqueryable, pure failover insurance, and it roughly doubles the instance cost. Zonal instances skip this entirely — fine for dev/staging, a real production risk otherwise since a single zone outage becomes an outage of the database.",
+            "fr": "Une instance Cloud SQL régionale (HA) provisionne un réplica de secours dans une autre zone de la même région, tenu synchronisé par réplication semi-synchrone ; en cas de panne, Cloud SQL promeut automatiquement le secours et repointe le même endpoint de connexion, typiquement en une soixantaine de secondes. Ce n'est pas un read replica : invisible, non interrogeable, pure assurance de failover, et cela double à peu près le coût de l'instance. Les instances zonales s'en passent totalement — acceptable en dev/staging, un vrai risque en production puisqu'une panne de zone devient une panne de la base."
+          }
+        },
+        {
+          "type": "text",
+          "body": {
+            "en": "Cross-region read replicas are asynchronous, visible, queryable instances you create explicitly for read scaling or disaster recovery; because replication is async, they lag (usually seconds, occasionally more under load) and can be promoted to a standalone writable instance if the primary region is lost — a manual, one-way operation. Point-in-time recovery relies on automated backups plus continuous transaction log archiving (binary logs for MySQL, WAL for PostgreSQL): enabling it lets you restore to any second within the retention window, not just to the last nightly backup, which is the actual RPO story to give a client, not \"we take backups\".",
+            "fr": "Les read replicas inter-régions sont des instances asynchrones, visibles, interrogeables, que l'on crée explicitement pour la montée en charge en lecture ou le disaster recovery ; la réplication étant asynchrone, elles accusent un retard (généralement des secondes, parfois plus sous charge) et peuvent être promues en instance autonome inscriptible si la région primaire est perdue — une opération manuelle et à sens unique. La récupération à un instant donné (PITR) repose sur les sauvegardes automatisées plus l'archivage continu des journaux de transactions (binlogs pour MySQL, WAL pour PostgreSQL) : l'activer permet de restaurer à n'importe quelle seconde dans la fenêtre de rétention, pas seulement à la dernière sauvegarde nocturne — c'est le vrai discours de RPO à tenir à un client, pas « on fait des sauvegardes »."
+          }
+        },
+        {
+          "type": "code",
+          "code": "gcloud sql instances patch orders-db \\\n  --backup-start-time=02:00 \\\n  --enable-bin-log \\\n  --retained-backups-count=30 \\\n  --retained-transaction-log-days=7 \\\n  --maintenance-window-day=SUN \\\n  --maintenance-window-hour=3",
+          "caption": {
+            "en": "Binary logging is what makes point-in-time recovery possible for MySQL; forgetting to enable it means only nightly-backup granularity.",
+            "fr": "L'activation des binlogs est ce qui rend possible la récupération à un instant donné pour MySQL ; l'oublier ramène à la granularité de la sauvegarde nocturne."
+          }
+        },
+        {
+          "type": "gotcha",
+          "body": {
+            "en": "The Cloud SQL Auth Proxy and Private IP solve different problems and get conflated constantly. Private IP puts the instance on your VPC via peering — lowest latency, no proxy process, but it requires VPC peering setup (or PSC) and network-level access control. The Auth Proxy works over public or private IP, authenticates with IAM instead of static passwords, and encrypts the connection without you managing certificates — the right default for Cloud Run/serverless clients that cannot easily join a VPC. Using Public IP with an authorized-networks allowlist and no proxy is the option to avoid: IP allowlists rot and are the actual cause of most Cloud SQL exposure incidents.",
+            "fr": "Le Cloud SQL Auth Proxy et l'IP privée résolvent des problèmes différents et sont constamment confondus. L'IP privée place l'instance sur votre VPC via peering — latence minimale, aucun processus proxy, mais exige un peering VPC (ou du PSC) et un contrôle d'accès au niveau réseau. L'Auth Proxy fonctionne sur IP publique ou privée, authentifie via IAM plutôt que des mots de passe statiques, et chiffre la connexion sans gestion de certificats — le bon défaut pour des clients Cloud Run/serverless qui ne peuvent pas facilement rejoindre un VPC. L'IP publique avec une liste blanche de réseaux autorisés et sans proxy est l'option à éviter : les listes blanches d'IP pourrissent et sont la cause réelle de la plupart des incidents d'exposition Cloud SQL."
+          }
+        },
+        {
+          "type": "tip",
+          "body": {
+            "en": "Maintenance windows matter more than they look: Google patches the underlying instance (OS, database minor versions) within your chosen window, and an HA instance fails over to apply it — a brief connection blip your app must tolerate with retries, not a scheduled downtime you control precisely. Pick a low-traffic window per environment, and make sure your connection pool retries transient failures; an app that treats every dropped connection as fatal will page someone every maintenance cycle.",
+            "fr": "Les fenêtres de maintenance comptent plus qu'il n'y paraît : Google corrige l'instance sous-jacente (OS, versions mineures du moteur) dans la fenêtre choisie, et une instance HA bascule pour l'appliquer — une brève coupure de connexion que votre appli doit tolérer via des retries, pas un arrêt planifié que vous contrôlez précisément. Choisissez une fenêtre à faible trafic par environnement, et assurez-vous que votre pool de connexions retente les échecs transitoires ; une appli qui traite toute connexion perdue comme fatale déclenchera une alerte à chaque cycle de maintenance."
+          }
+        }
+      ]
+    },
+    {
+      "id": "databases-spanner",
+      "title": {
+        "en": "Spanner deep dive: keys, interleaving, sizing",
+        "fr": "Spanner en profondeur : clés, interleaving, dimensionnement"
+      },
+      "minutes": 6,
+      "blocks": [
+        {
+          "type": "text",
+          "body": {
+            "en": "Spanner achieves external consistency (a stronger guarantee than most systems' 'strong consistency') via TrueTime, an API backed by atomic clocks and GPS receivers in every datacenter that bounds clock uncertainty to a few milliseconds. Commit timestamps wait out that uncertainty window before being considered final, which is what lets Spanner order transactions correctly across continents without a central coordinator. The practical consequence: correctness does not depend on network latency the way eventually-consistent systems do, but write commit latency has a real floor set by that uncertainty wait, so single-digit-millisecond writes are not the pitch — global correctness is.",
+            "fr": "Spanner atteint la cohérence externe (une garantie plus forte que la « cohérence forte » de la plupart des systèmes) via TrueTime, une API adossée à des horloges atomiques et des récepteurs GPS dans chaque datacenter, qui borne l'incertitude d'horloge à quelques millisecondes. Les timestamps de commit attendent l'écoulement de cette fenêtre d'incertitude avant d'être considérés définitifs, ce qui permet à Spanner d'ordonner correctement les transactions à travers les continents sans coordinateur central. Conséquence pratique : la correction ne dépend pas de la latence réseau comme dans les systèmes à cohérence éventuelle, mais la latence de commit en écriture a un plancher réel fixé par cette attente d'incertitude — l'argument de vente n'est pas l'écriture en une milliseconde, c'est la correction globale."
+          }
+        },
+        {
+          "type": "text",
+          "body": {
+            "en": "Primary key design is the single highest-leverage decision in a Spanner schema, because keys determine how data splits across nodes. A monotonically increasing key (auto-increment integer, or a timestamp prefix) sends all new writes to the same split — a hotspot that caps write throughput regardless of how many nodes you add. Fixes: a UUID (random, spreads writes), a bit-reversed sequence, or a hash prefix on the natural key. Interleaved tables are the other lever: declaring a child table (e.g. OrderItems) interleaved in a parent (Orders) physically co-locates the rows on the same split, turning what would be a distributed join into a local read.",
+            "fr": "La conception de la clé primaire est la décision à plus fort effet de levier d'un schéma Spanner, car les clés déterminent comment les données se répartissent entre les nœuds. Une clé strictement croissante (entier auto-incrémenté, ou préfixe d'horodatage) envoie toutes les nouvelles écritures vers le même split — un point chaud qui plafonne le débit d'écriture quel que soit le nombre de nœuds ajoutés. Remèdes : un UUID (aléatoire, répartit les écritures), une séquence à bits inversés, ou un préfixe de hachage sur la clé naturelle. Les tables interleaved sont l'autre levier : déclarer une table enfant (par ex. OrderItems) interleaved dans un parent (Orders) co-localise physiquement les lignes sur le même split, transformant ce qui serait une jointure distribuée en une lecture locale."
+          }
+        },
+        {
+          "type": "code",
+          "code": "-- Anti-pattern: monotonic key hotspots all writes on one split\nCREATE TABLE Orders (\n  OrderId INT64 NOT NULL,      -- auto-increment: bad\n  CustomerId INT64 NOT NULL,\n  CreatedAt TIMESTAMP NOT NULL,\n) PRIMARY KEY (OrderId);\n\n-- Better: UUID key, and items interleaved with their order\nCREATE TABLE Orders (\n  OrderId STRING(36) NOT NULL,  -- UUID: writes spread across splits\n  CustomerId INT64 NOT NULL,\n  CreatedAt TIMESTAMP NOT NULL,\n) PRIMARY KEY (OrderId);\n\nCREATE TABLE OrderItems (\n  OrderId STRING(36) NOT NULL,\n  ItemId INT64 NOT NULL,\n  Sku STRING(64) NOT NULL,\n) PRIMARY KEY (OrderId, ItemId),\n  INTERLEAVE IN PARENT Orders ON DELETE CASCADE;",
+          "caption": {
+            "en": "Interleaving plus a non-monotonic key are the two schema decisions that make or break Spanner performance.",
+            "fr": "L'interleaving et une clé non monotone sont les deux décisions de schéma qui font ou défont la performance de Spanner."
+          }
+        },
+        {
+          "type": "gotcha",
+          "body": {
+            "en": "Sizing is quoted in nodes historically, but granular billing uses processing units (PU): 1000 PU equals one node, and you can provision in increments as small as 100 PU, which matters because a single node is genuinely a lot of capacity (and cost) for a workload that doesn't need it. Compute and storage scale together with nodes/PUs — you cannot buy extra storage independently of compute the way you would on Cloud SQL, so a storage-heavy, compute-light workload pays for capacity it doesn't use.",
+            "fr": "Le dimensionnement se décrit historiquement en nœuds, mais la facturation granulaire utilise les unités de traitement (PU) : 1000 PU équivaut à un nœud, et on peut provisionner par paliers de 100 PU, ce qui compte car un nœud entier représente réellement beaucoup de capacité (et de coût) pour une charge qui n'en a pas besoin. Calcul et stockage évoluent ensemble avec les nœuds/PU — impossible d'acheter du stockage supplémentaire indépendamment du calcul comme sur Cloud SQL, donc une charge gourmande en stockage mais légère en calcul paie une capacité qu'elle n'utilise pas."
+          }
+        },
+        {
+          "type": "tip",
+          "body": {
+            "en": "The interview-grade cost framing: Spanner's floor cost (smallest viable node/PU footprint, replicated across at least 3 zones for regional configs) is higher than Cloud SQL's floor, so it only pays off once you actually need what it's built for — writes beyond a single primary's ceiling, true multi-region strong consistency, or elastic node scaling without downtime. Below that threshold, you are paying a global-scale tax for a regional-scale problem; say so explicitly rather than defaulting to the fanciest tool in the room.",
+            "fr": "Le cadrage coût niveau entretien : le coût plancher de Spanner (plus petit footprint nœud/PU viable, répliqué sur au moins 3 zones en config régionale) dépasse celui de Cloud SQL, donc il ne se rentabilise qu'une fois qu'on a réellement besoin de ce pour quoi il est conçu — des écritures au-delà du plafond d'un seul primaire, une vraie cohérence forte multi-région, ou un scaling de nœuds élastique sans coupure. En dessous de ce seuil, on paie une taxe d'échelle mondiale pour un problème d'échelle régionale ; il faut le dire explicitement plutôt que choisir par défaut l'outil le plus impressionnant de la pièce."
+          }
+        }
+      ]
+    },
+    {
+      "id": "databases-firestore-bigtable",
+      "title": {
+        "en": "Firestore & Bigtable: document vs wide-column at scale",
+        "fr": "Firestore & Bigtable : document vs wide-column à grande échelle"
+      },
+      "minutes": 6,
+      "blocks": [
+        {
+          "type": "text",
+          "body": {
+            "en": "Firestore is a serverless document database built for app development: nested collections/documents, real-time listeners that push changes to connected clients (the backbone of every 'live' mobile/web app), offline persistence handled by the client SDK, and fine-grained security rules that let mobile clients talk to it directly without a backend. Native mode is the modern, fully-featured document model; Datastore mode is the legacy entity-group API kept for backward compatibility — new projects should default to Native mode unless migrating an existing Datastore application.",
+            "fr": "Firestore est une base de données documents serverless conçue pour le développement d'applications : collections/documents imbriqués, listeners temps réel qui poussent les changements aux clients connectés (l'ossature de toute appli mobile/web « live »), persistance hors ligne gérée par le SDK client, et des règles de sécurité fines qui permettent aux clients mobiles de lui parler directement sans backend. Le mode natif est le modèle document moderne et complet ; le mode Datastore est l'API entity-group historique conservée pour la rétrocompatibilité — les nouveaux projets doivent partir par défaut sur le mode natif, sauf migration d'une appli Datastore existante."
+          }
+        },
+        {
+          "type": "text",
+          "body": {
+            "en": "The limit every Firestore design must respect: a single document supports roughly one sustained write per second before contention (and eventually errors) appear, because each write requires a consistent update across all indexes on that document. A naive 'one counter document' for a popular feature (likes, view counts) becomes the bottleneck of the entire feature at surprisingly low traffic. The standard fix is sharding the counter across N sub-documents and summing on read, or using a dedicated distributed counter pattern — the same hotspot problem as a Spanner monotonic key, one layer up the stack.",
+            "fr": "La limite que toute conception Firestore doit respecter : un document unique supporte environ une écriture soutenue par seconde avant que la contention (puis des erreurs) n'apparaisse, car chaque écriture exige une mise à jour cohérente de tous les index de ce document. Un « document compteur unique » naïf pour une fonctionnalité populaire (likes, vues) devient le goulot de toute la fonctionnalité à un trafic étonnamment bas. Le correctif standard est de partitionner le compteur sur N sous-documents et de sommer à la lecture, ou d'utiliser un motif de compteur distribué dédié — le même problème de point chaud qu'une clé monotone Spanner, un étage plus haut dans la pile."
+          }
+        },
+        {
+          "type": "code",
+          "code": "# Bigtable: row key design IS the schema decision that matters\n# Bad: sequential key hotspots writes on one tablet server\nrow_key = f\"{timestamp}\"\n\n# Good: salt/reverse to spread writes, keep related reads adjacent\nrow_key = f\"{device_id}#{reverse_timestamp}\"\n# reads for one device's recent readings stay a contiguous scan,\n# while writes across many devices spread across tablet servers\n\ncbt createtable sensor_data \\\n  families=readings\ncbt set sensor_data device-042#9992007193 readings:temp=21.4",
+          "caption": {
+            "en": "Bigtable has no secondary indexes: the row key is the only access path, so it must encode exactly how you'll query.",
+            "fr": "Bigtable n'a pas d'index secondaires : la row key est le seul chemin d'accès, elle doit donc encoder exactement la façon dont vous interrogerez."
+          }
+        },
+        {
+          "type": "gotcha",
+          "body": {
+            "en": "Bigtable is deceptively simple to provision (an HBase-API-compatible wide-column store scaling to petabytes and millions of QPS) and deceptively easy to misuse, because all the intelligence lives in row-key design, not in Bigtable itself. Sequential keys (raw timestamps, incrementing IDs) concentrate load on one tablet server while the rest of the cluster idles — the classic symptom is a cluster reporting low average CPU while one node is pegged and requests time out. There is no query planner to bail you out; a bad row key is a rewrite, not a config change.",
+            "fr": "Bigtable est trompeusement simple à provisionner (un store wide-column compatible API HBase qui scale au pétaoctet et au million de QPS/s) et trompeusement facile à mal utiliser, car toute l'intelligence réside dans la conception de la row key, pas dans Bigtable lui-même. Des clés séquentielles (horodatages bruts, ID incrémentaux) concentrent la charge sur un seul tablet server pendant que le reste du cluster tourne au ralenti — le symptôme classique est un cluster affichant un CPU moyen faible pendant qu'un nœud est saturé et que les requêtes expirent. Aucun planificateur de requêtes ne vous sauve ; une mauvaise row key se corrige par une réécriture, pas par un changement de config."
+          }
+        },
+        {
+          "type": "tip",
+          "body": {
+            "en": "Reach for Bigtable when the access pattern is 'huge volume, known key lookups or range scans, no need for SQL or secondary indexes' — time series (metrics, sensor readings), IoT telemetry, ad tech bidding logs, financial tick data, recommendation feature stores. Reach for Firestore when the shape is 'moderate volume, rich queries, needs to sync to mobile/web clients in real time'. Picking Bigtable for a feature that actually needs ad-hoc queries by non-key fields means building your own secondary-index layer — expensive engineering time solving a problem Firestore already solved.",
+            "fr": "Tournez-vous vers Bigtable quand le motif d'accès est « volume énorme, lookups par clé connue ou scans de plage, pas besoin de SQL ni d'index secondaires » — séries temporelles (métriques, capteurs), télémétrie IoT, logs d'enchères ad tech, données de tick financières, feature stores de recommandation. Tournez-vous vers Firestore quand la forme est « volume modéré, requêtes riches, synchronisation temps réel vers des clients mobiles/web ». Choisir Bigtable pour une fonctionnalité qui a en fait besoin de requêtes ad hoc sur des champs non-clé revient à construire sa propre couche d'index secondaires — du temps d'ingénierie coûteux pour résoudre un problème que Firestore a déjà résolu."
+          }
+        }
+      ]
+    },
+    {
+      "id": "databases-choosing",
+      "title": {
+        "en": "Choosing the right database: decision tree and cost",
+        "fr": "Choisir la bonne base de données : arbre de décision et coûts"
+      },
+      "minutes": 5,
+      "blocks": [
+        {
+          "type": "text",
+          "body": {
+            "en": "A workable decision tree, in the order a senior engineer actually asks the questions: Do you need SQL joins and transactions at a scale one machine can handle? Cloud SQL. Same, but also real-time analytics on live transactional data? AlloyDB. Need SQL and ACID but at a scale or geographic distribution no single primary can serve? Spanner. Need a flexible document model with real-time sync to client apps, at moderate write volume? Firestore. Need to ingest and query massive, mostly-append data by key or range, with no need for joins? Bigtable. Every one of these is a genuine trade-off, not a strictly-better option — that's the interview answer that shows understanding, not memorization.",
+            "fr": "Un arbre de décision opérationnel, dans l'ordre où un ingénieur senior se pose réellement les questions : besoin de jointures SQL et de transactions à une échelle qu'une seule machine encaisse ? Cloud SQL. Pareil, mais aussi de l'analytique temps réel sur des données transactionnelles vivantes ? AlloyDB. Besoin de SQL et d'ACID mais à une échelle ou une distribution géographique qu'aucun primaire unique ne peut servir ? Spanner. Besoin d'un modèle document flexible avec synchronisation temps réel vers des apps clientes, à volume d'écriture modéré ? Firestore. Besoin d'ingérer et d'interroger des données massives, majoritairement en ajout, par clé ou par plage, sans besoin de jointures ? Bigtable. Chacune de ces options est un vrai compromis, pas une option strictement meilleure — c'est la réponse d'entretien qui montre la compréhension, pas le par-cœur."
+          }
+        },
+        {
+          "type": "text",
+          "body": {
+            "en": "Migration reality check: lifting an existing MySQL/PostgreSQL estate almost always lands on Cloud SQL first, using Database Migration Service for a managed, minimal-downtime cutover; moving to AlloyDB afterward (same wire protocol) is comparatively low-friction if HTAP performance becomes the driver. Moving to Spanner from a relational schema is never a lift-and-shift: it demands rethinking primary keys and normalization around interleaving, and application code must handle the different transaction/latency profile. Moving from Cloud SQL to Firestore or Bigtable is a full re-architecture, not a migration — different query model entirely, budget it as a rewrite.",
+            "fr": "Vérité de terrain sur la migration : reprendre un existant MySQL/PostgreSQL atterrit presque toujours d'abord sur Cloud SQL, via Database Migration Service pour une bascule managée à coupure minimale ; passer ensuite à AlloyDB (même protocole de câble) est relativement peu coûteux si la performance HTAP devient le moteur. Passer à Spanner depuis un schéma relationnel n'est jamais un lift-and-shift : cela exige de repenser les clés primaires et la normalisation autour de l'interleaving, et le code applicatif doit encaisser un profil transaction/latence différent. Passer de Cloud SQL à Firestore ou Bigtable est une refonte complète, pas une migration — un modèle de requête entièrement différent ; budgétez-le comme une réécriture."
+          }
+        },
+        {
+          "type": "code",
+          "code": "# Rough monthly cost shape for a modest workload (illustrative, not a quote):\n# Cloud SQL   : lowest floor, pay for vCPU/RAM/storage of one sized instance\n# AlloyDB     : Cloud SQL-ish floor + cluster overhead + optional columnar engine\n# Spanner     : highest floor (node/PU minimum, x3 zones for regional), scales\n#               near-linearly and predictably beyond that floor\n# Firestore   : near-zero floor, pay per read/write/delete op + stored data\n# Bigtable    : node-hour floor (no serverless tier historically) + storage,\n#               justified only at real scale",
+          "caption": {
+            "en": "The floor cost, not the marginal cost, is what makes Spanner and Bigtable wrong for small workloads.",
+            "fr": "C'est le coût plancher, pas le coût marginal, qui rend Spanner et Bigtable inadaptés aux petites charges."
+          }
+        },
+        {
+          "type": "gotcha",
+          "body": {
+            "en": "\"We'll just pick Spanner/Bigtable now so we never have to migrate later\" is premature scaling dressed up as foresight. Both carry a real floor cost and a real schema-design tax (interleaving and key choice; row-key design) that most projects never need and that actively slow down early iteration, when the schema is still changing weekly. The costly mistake is rarely 'we picked Cloud SQL and had to migrate at scale' — that migration is well-trodden — it's usually 'we over-engineered for scale we never reached and paid the complexity tax for years'.",
+            "fr": "« On choisit direct Spanner/Bigtable pour ne jamais avoir à migrer plus tard » est du sur-engineering déguisé en anticipation. Les deux portent un coût plancher réel et une vraie taxe de conception de schéma (interleaving et choix de clé ; conception de row key) dont la plupart des projets n'ont jamais besoin et qui ralentissent activement l'itération précoce, quand le schéma change encore chaque semaine. L'erreur coûteuse est rarement « on a choisi Cloud SQL et il a fallu migrer à l'échelle » — cette migration est bien balisée — c'est plus souvent « on a sur-engineré pour une échelle jamais atteinte et payé la taxe de complexité pendant des années »."
+          }
+        },
+        {
+          "type": "tip",
+          "body": {
+            "en": "The strongest closing statement in a database-choice discussion: name the actual constraint driving the decision — consistency requirement, access pattern, write throughput ceiling, geographic distribution, team's existing SQL skillset — rather than the service name. Interviewers and architecture reviews reward \"we need X because of constraint Y\" far more than \"we're using Spanner because it's the most scalable\"; the latter is a red flag that no real analysis happened.",
+            "fr": "La conclusion la plus solide dans une discussion de choix de base : nommer la vraie contrainte qui pilote la décision — exigence de cohérence, motif d'accès, plafond de débit d'écriture, distribution géographique, compétences SQL existantes de l'équipe — plutôt que le nom du service. Les entretiens et les revues d'architecture récompensent bien plus « on a besoin de X à cause de la contrainte Y » que « on utilise Spanner parce que c'est le plus scalable » ; cette dernière phrase est un signal d'alarme qu'aucune vraie analyse n'a eu lieu."
+          }
+        }
+      ]
+    }
+  ],
+  "flashcards": [
+    {
+      "id": "fc-databases-cloudsql-vs-alloydb-vs-spanner",
+      "front": {
+        "en": "One-line default heuristic: Cloud SQL vs AlloyDB vs Spanner?",
+        "fr": "Heuristique par défaut en une ligne : Cloud SQL vs AlloyDB vs Spanner ?"
+      },
+      "back": {
+        "en": "Cloud SQL is the default for standard OLTP. AlloyDB when the same data needs fast real-time analytics too (HTAP). Spanner only when you need true multi-region strong consistency or write scale beyond a single primary.",
+        "fr": "Cloud SQL est le défaut pour l'OLTP standard. AlloyDB quand les mêmes données ont aussi besoin d'analytique temps réel rapide (HTAP). Spanner seulement pour une vraie cohérence forte multi-région ou un débit d'écriture au-delà d'un seul primaire."
+      }
+    },
+    {
+      "id": "fc-databases-alloydb-htap",
+      "front": {
+        "en": "What makes AlloyDB HTAP, and what does that buy you?",
+        "fr": "Qu'est-ce qui rend AlloyDB HTAP, et qu'est-ce que ça apporte ?"
+      },
+      "back": {
+        "en": "A disaggregated storage layer plus an in-memory columnar engine alongside the row store: transactional writes and analytical scans run fast on the same live data, without ETL to a separate warehouse.",
+        "fr": "Une couche de stockage désagrégée plus un moteur colonnaire en mémoire à côté du stockage ligne : écritures transactionnelles et scans analytiques rapides sur les mêmes données vivantes, sans ETL vers un entrepôt séparé."
+      }
+    },
+    {
+      "id": "fc-databases-spanner-truetime",
+      "front": {
+        "en": "What is TrueTime and why does Spanner need it?",
+        "fr": "Qu'est-ce que TrueTime et pourquoi Spanner en a-t-il besoin ?"
+      },
+      "back": {
+        "en": "An API backed by atomic clocks and GPS in every datacenter bounding clock uncertainty to a few milliseconds. Spanner waits out that uncertainty before finalizing commit timestamps, enabling external consistency across continents without a central coordinator.",
+        "fr": "Une API adossée à des horloges atomiques et au GPS dans chaque datacenter, bornant l'incertitude d'horloge à quelques millisecondes. Spanner attend l'écoulement de cette incertitude avant de finaliser les timestamps de commit, ce qui permet la cohérence externe entre continents sans coordinateur central."
+      }
+    },
+    {
+      "id": "fc-databases-cloudsql-ha",
+      "front": {
+        "en": "Cloud SQL regional (HA) instance: what exactly fails over, and how fast?",
+        "fr": "Instance Cloud SQL régionale (HA) : qu'est-ce qui bascule exactement, et à quelle vitesse ?"
+      },
+      "back": {
+        "en": "A standby replica in a different zone, kept in sync via semi-synchronous replication, invisible and unqueryable. On failure it's promoted and the same endpoint repointed, typically in about 60 seconds. Not a read replica.",
+        "fr": "Un réplica de secours dans une autre zone, synchronisé de façon semi-synchrone, invisible et non interrogeable. En cas de panne, il est promu et le même endpoint repointé, typiquement en ~60 secondes. Ce n'est pas un read replica."
+      }
+    },
+    {
+      "id": "fc-databases-read-replicas",
+      "front": {
+        "en": "Cross-region Cloud SQL read replicas: sync or async, and what's the DR play?",
+        "fr": "Read replicas Cloud SQL inter-régions : synchrones ou asynchrones, et quel usage en DR ?"
+      },
+      "back": {
+        "en": "Asynchronous, so they lag behind the primary. They serve read scaling day to day, and can be manually promoted to a standalone writable instance for disaster recovery if the primary region is lost — a one-way operation.",
+        "fr": "Asynchrones, donc en retard sur le primaire. Ils servent la montée en charge en lecture au quotidien, et peuvent être promus manuellement en instance autonome inscriptible pour le disaster recovery si la région primaire est perdue — une opération à sens unique."
+      }
+    },
+    {
+      "id": "fc-databases-pitr",
+      "front": {
+        "en": "What enables point-in-time recovery on Cloud SQL, and what's the RPO without it?",
+        "fr": "Qu'est-ce qui permet le PITR sur Cloud SQL, et quel est le RPO sans lui ?"
+      },
+      "back": {
+        "en": "Automated backups plus continuous transaction log archiving (binary logs on MySQL, WAL on PostgreSQL). Without enabling logs, recovery is only possible to the last nightly backup — an RPO of up to 24 hours.",
+        "fr": "Les sauvegardes automatisées plus l'archivage continu des journaux de transactions (binlogs sur MySQL, WAL sur PostgreSQL). Sans activer les journaux, la restauration ne remonte qu'à la dernière sauvegarde nocturne — un RPO pouvant atteindre 24 heures."
+      }
+    },
+    {
+      "id": "fc-databases-proxy-vs-private-ip",
+      "front": {
+        "en": "Cloud SQL Auth Proxy vs Private IP: pick one for a Cloud Run service with no VPC connector.",
+        "fr": "Cloud SQL Auth Proxy vs IP privée : lequel pour un service Cloud Run sans connecteur VPC ?"
+      },
+      "back": {
+        "en": "The Auth Proxy: it authenticates via IAM and encrypts the connection over public or private IP without VPC peering or certificate management, the right default when joining a VPC is inconvenient. Private IP needs VPC peering/PSC first.",
+        "fr": "L'Auth Proxy : il authentifie via IAM et chiffre la connexion sur IP publique ou privée sans peering VPC ni gestion de certificats, le bon défaut quand rejoindre un VPC est contraignant. L'IP privée exige d'abord un peering VPC/PSC."
+      }
+    },
+    {
+      "id": "fc-databases-interleaved-tables",
+      "front": {
+        "en": "What does INTERLEAVE IN PARENT actually do physically in Spanner?",
+        "fr": "Que fait physiquement INTERLEAVE IN PARENT dans Spanner ?"
+      },
+      "back": {
+        "en": "It co-locates child rows with their parent row on the same split, so a parent-child read is a local scan instead of a distributed join — the main lever for query locality in Spanner schema design.",
+        "fr": "Il co-localise les lignes enfant avec leur ligne parente sur le même split, si bien qu'une lecture parent-enfant devient un scan local au lieu d'une jointure distribuée — le levier principal de localité de requête dans la conception de schéma Spanner."
+      }
+    },
+    {
+      "id": "fc-databases-hotspotting",
+      "front": {
+        "en": "Why does a monotonically increasing primary key hurt Spanner (and how do you fix it)?",
+        "fr": "Pourquoi une clé primaire strictement croissante nuit-elle à Spanner (et comment corriger) ?"
+      },
+      "back": {
+        "en": "All new writes land on the same split, capping write throughput regardless of node count. Fix with a UUID, a bit-reversed sequence, or a hash prefix on the natural key to spread writes across splits.",
+        "fr": "Toutes les nouvelles écritures atterrissent sur le même split, plafonnant le débit d'écriture quel que soit le nombre de nœuds. Corrigez avec un UUID, une séquence à bits inversés, ou un préfixe de hachage sur la clé naturelle pour répartir les écritures entre splits."
+      }
+    },
+    {
+      "id": "fc-databases-spanner-sizing",
+      "front": {
+        "en": "Spanner sizing: nodes vs processing units, and what scales together?",
+        "fr": "Dimensionnement Spanner : nœuds vs unités de traitement, et qu'est-ce qui évolue ensemble ?"
+      },
+      "back": {
+        "en": "1000 processing units (PU) equal one node; PUs let you provision in increments as small as 100. Compute and storage scale together with nodes/PUs — you can't buy extra storage independently of compute like on Cloud SQL.",
+        "fr": "1000 unités de traitement (PU) équivalent à un nœud ; les PU permettent de provisionner par paliers de 100. Calcul et stockage évoluent ensemble avec les nœuds/PU — impossible d'acheter du stockage en plus indépendamment du calcul comme sur Cloud SQL."
+      }
+    },
+    {
+      "id": "fc-databases-firestore-modes",
+      "front": {
+        "en": "Firestore Native mode vs Datastore mode: which for a new project?",
+        "fr": "Firestore mode natif vs mode Datastore : lequel pour un nouveau projet ?"
+      },
+      "back": {
+        "en": "Native mode: the modern, full document model with real-time listeners and mobile/web SDKs — the default for new projects. Datastore mode: legacy entity-group API, kept for backward compatibility with existing Datastore apps.",
+        "fr": "Mode natif : le modèle document moderne et complet, avec listeners temps réel et SDK mobile/web — le défaut pour tout nouveau projet. Mode Datastore : API entity-group historique, conservée pour la rétrocompatibilité des apps Datastore existantes."
+      }
+    },
+    {
+      "id": "fc-databases-firestore-write-limit",
+      "front": {
+        "en": "What is Firestore's 1 write/sec/document limit really about, and the standard fix?",
+        "fr": "À quoi correspond vraiment la limite Firestore d'1 écriture/s/document, et le correctif standard ?"
+      },
+      "back": {
+        "en": "Each write must consistently update all indexes on that document, so a hot document (a shared counter) contends at low traffic. Fix: shard the counter across N sub-documents and sum on read (distributed counter pattern).",
+        "fr": "Chaque écriture doit mettre à jour de façon cohérente tous les index de ce document, donc un document chaud (un compteur partagé) entre en contention à faible trafic. Correctif : partitionner le compteur sur N sous-documents et sommer à la lecture (motif de compteur distribué)."
+      }
+    },
+    {
+      "id": "fc-databases-bigtable-rowkey",
+      "front": {
+        "en": "Why is Bigtable row-key design \"the schema\", and what's the classic mistake?",
+        "fr": "Pourquoi la row key est-elle « le schéma » de Bigtable, et quelle est l'erreur classique ?"
+      },
+      "back": {
+        "en": "Bigtable has no secondary indexes; the row key is the only access path. The classic mistake is a sequential key (raw timestamp, incrementing ID) that concentrates all writes on one tablet server while the rest of the cluster idles.",
+        "fr": "Bigtable n'a pas d'index secondaires ; la row key est le seul chemin d'accès. L'erreur classique est une clé séquentielle (horodatage brut, ID incrémental) qui concentre toutes les écritures sur un seul tablet server pendant que le reste du cluster tourne au ralenti."
+      }
+    },
+    {
+      "id": "fc-databases-decision-tree",
+      "front": {
+        "en": "Give the one-question shortcut to pick between Firestore and Bigtable.",
+        "fr": "Donnez le raccourci en une question pour choisir entre Firestore et Bigtable."
+      },
+      "back": {
+        "en": "Do you need rich queries and real-time sync to client apps at moderate volume? Firestore. Do you need massive-scale key/range lookups with no need for secondary indexes or joins? Bigtable.",
+        "fr": "Besoin de requêtes riches et de synchronisation temps réel vers des apps clientes à volume modéré ? Firestore. Besoin de lookups par clé/plage à très grande échelle, sans besoin d'index secondaires ni de jointures ? Bigtable."
+      }
+    }
+  ],
+  "exercises": [
+    {
+      "id": "ex-databases-choose-service",
+      "kind": "mcq",
+      "prompt": {
+        "en": "A three-person team is building a B2B SaaS app: standard CRUD, moderate traffic (under 200 req/s), one region, relational schema with foreign keys. Which database is the sane default?",
+        "fr": "Une équipe de trois personnes construit une appli SaaS B2B : CRUD standard, trafic modéré (moins de 200 req/s), une seule région, schéma relationnel avec clés étrangères. Quelle base de données est le choix raisonnable ?"
+      },
+      "choices": [
+        {
+          "id": "a",
+          "label": {
+            "en": "Spanner, since it's Google's flagship database",
+            "fr": "Spanner, puisque c'est la base phare de Google"
+          }
+        },
+        {
+          "id": "b",
+          "label": {
+            "en": "Cloud SQL (PostgreSQL), regional HA",
+            "fr": "Cloud SQL (PostgreSQL), en HA régionale"
+          }
+        },
+        {
+          "id": "c",
+          "label": {
+            "en": "Bigtable, for future-proof scale",
+            "fr": "Bigtable, pour une échelle à toute épreuve"
+          }
+        },
+        {
+          "id": "d",
+          "label": {
+            "en": "Firestore in Datastore mode",
+            "fr": "Firestore en mode Datastore"
+          }
+        }
+      ],
+      "answerId": "b",
+      "explanation": {
+        "en": "This is the textbook Cloud SQL case: relational schema, moderate scale, single region. Spanner and Bigtable add operational and schema-design complexity this workload doesn't need; Datastore mode is a legacy choice with no upside for a greenfield project, which should use Native mode if Firestore were even the right shape (it isn't, given the relational needs).",
+        "fr": "C'est le cas d'école Cloud SQL : schéma relationnel, échelle modérée, région unique. Spanner et Bigtable ajoutent une complexité opérationnelle et de conception de schéma inutile ici ; le mode Datastore est un choix historique sans avantage pour un projet greenfield, qui utiliserait le mode natif si Firestore était même la bonne forme (ce qui n'est pas le cas vu les besoins relationnels)."
+      },
+      "difficulty": 1
+    },
+    {
+      "id": "ex-databases-hotspot-bug",
+      "kind": "find-bug",
+      "prompt": {
+        "en": "This Spanner schema for an events-ingestion table shows terrible write throughput that doesn't improve when the instance is scaled from 1 to 5 nodes. Find the bug.",
+        "fr": "Ce schéma Spanner pour une table d'ingestion d'événements affiche un débit d'écriture catastrophique qui ne s'améliore pas quand l'instance passe de 1 à 5 nœuds. Trouvez le bug."
+      },
+      "code": "CREATE TABLE Events (\n  EventId INT64 NOT NULL,  -- generated from a monotonic sequence\n  DeviceId STRING(36) NOT NULL,\n  Payload BYTES(MAX),\n  CreatedAt TIMESTAMP NOT NULL,\n) PRIMARY KEY (EventId);",
+      "choices": [
+        {
+          "id": "a",
+          "label": {
+            "en": "BYTES(MAX) columns cannot be written concurrently",
+            "fr": "Les colonnes BYTES(MAX) ne peuvent pas être écrites de façon concurrente"
+          }
+        },
+        {
+          "id": "b",
+          "label": {
+            "en": "The monotonic EventId key concentrates all writes on the same split, regardless of node count",
+            "fr": "La clé EventId monotone concentre toutes les écritures sur le même split, quel que soit le nombre de nœuds"
+          }
+        },
+        {
+          "id": "c",
+          "label": {
+            "en": "TIMESTAMP columns require a secondary index to be writable",
+            "fr": "Les colonnes TIMESTAMP exigent un index secondaire pour être inscriptibles"
+          }
+        },
+        {
+          "id": "d",
+          "label": {
+            "en": "Primary keys in Spanner must be composite",
+            "fr": "Les clés primaires dans Spanner doivent être composites"
+          }
+        }
+      ],
+      "answerId": "b",
+      "explanation": {
+        "en": "A monotonically increasing key means every new row's key sorts after all previous ones, so all writes land on the same key range (split) — adding nodes distributes other splits, not this one, so throughput doesn't improve. Fix: use a UUID, a bit-reversed sequence, or hash the natural key. The other options aren't real Spanner constraints.",
+        "fr": "Une clé strictement croissante signifie que chaque nouvelle ligne trie après toutes les précédentes, donc toutes les écritures atterrissent sur la même plage de clés (split) — ajouter des nœuds distribue les autres splits, pas celui-ci, donc le débit ne s'améliore pas. Correctif : utiliser un UUID, une séquence à bits inversés, ou hacher la clé naturelle. Les autres options ne sont pas de vraies contraintes Spanner."
+      },
+      "difficulty": 2
+    },
+    {
+      "id": "ex-databases-ha-failover",
+      "kind": "mcq",
+      "prompt": {
+        "en": "A Cloud SQL regional (HA) PostgreSQL instance loses its primary zone. The application, connected via the instance's standard connection name, experiences a ~50-second blip and then recovers with no config change. A teammate says \"great, we now have read scaling too.\" What's wrong with that statement?",
+        "fr": "Une instance Cloud SQL régionale (HA) PostgreSQL perd sa zone primaire. L'application, connectée via le nom de connexion standard de l'instance, subit une coupure d'environ 50 secondes puis récupère sans changement de config. Un collègue dit « super, on a maintenant aussi de la montée en charge en lecture ». Qu'est-ce qui cloche dans cette affirmation ?"
+      },
+      "choices": [
+        {
+          "id": "a",
+          "label": {
+            "en": "Nothing, HA and read scaling are the same mechanism",
+            "fr": "Rien, la HA et la montée en charge en lecture sont le même mécanisme"
+          }
+        },
+        {
+          "id": "b",
+          "label": {
+            "en": "The HA standby is not queryable; read scaling requires explicitly created read replicas",
+            "fr": "Le secours HA n'est pas interrogeable ; la montée en charge en lecture exige des read replicas créés explicitement"
+          }
+        },
+        {
+          "id": "c",
+          "label": {
+            "en": "Failover only works for MySQL, not PostgreSQL",
+            "fr": "Le failover ne fonctionne que pour MySQL, pas PostgreSQL"
+          }
+        },
+        {
+          "id": "d",
+          "label": {
+            "en": "The blip means failover actually failed",
+            "fr": "La coupure signifie que le failover a en fait échoué"
+          }
+        }
+      ],
+      "answerId": "b",
+      "explanation": {
+        "en": "Regional HA gives you a hidden, unqueryable standby purely for failover — it does not add read capacity. Getting read scaling requires creating separate, explicit read replicas (same-region or cross-region), which are visible, queryable, and asynchronously replicated. The failover behavior described (brief blip, automatic endpoint repoint) is exactly how HA is supposed to work for both MySQL and PostgreSQL.",
+        "fr": "La HA régionale donne un secours caché et non interrogeable, purement pour le failover — elle n'ajoute aucune capacité de lecture. Obtenir de la montée en charge en lecture exige de créer des read replicas explicites (même région ou inter-régions), qui sont visibles, interrogeables et répliqués de façon asynchrone. Le comportement de failover décrit (brève coupure, repointage automatique de l'endpoint) est exactement le fonctionnement attendu de la HA, pour MySQL comme pour PostgreSQL."
+      },
+      "difficulty": 2
+    },
+    {
+      "id": "ex-databases-write-limit-predict",
+      "kind": "predict-output",
+      "prompt": {
+        "en": "A flash-sale feature increments this single Firestore document field on every purchase, across a sudden burst of ~40 purchases/sec. What actually happens?",
+        "fr": "Une fonctionnalité de vente flash incrémente ce champ d'un unique document Firestore à chaque achat, avec une rafale soudaine d'environ 40 achats/s. Que se passe-t-il réellement ?"
+      },
+      "code": "const ref = db.collection('stats').doc('flashSaleCounter');\nawait ref.update({\n  totalSold: FieldValue.increment(1)\n});",
+      "choices": [
+        {
+          "id": "a",
+          "label": {
+            "en": "Firestore auto-shards hot documents transparently, no issue",
+            "fr": "Firestore partitionne automatiquement les documents chauds, aucun souci"
+          }
+        },
+        {
+          "id": "b",
+          "label": {
+            "en": "Most writes succeed instantly since increment() is a special atomic op with no limit",
+            "fr": "La plupart des écritures réussissent instantanément car increment() est une opération atomique spéciale sans limite"
+          }
+        },
+        {
+          "id": "c",
+          "label": {
+            "en": "A large share of writes fail or queue with contention errors, since one document sustains roughly 1 write/sec before contention",
+            "fr": "Une grande part des écritures échoue ou patiente avec des erreurs de contention, car un document soutient environ 1 écriture/s avant contention"
+          }
+        },
+        {
+          "id": "d",
+          "label": {
+            "en": "Firestore silently drops excess writes above 10/sec without error",
+            "fr": "Firestore abandonne silencieusement les écritures excédentaires au-delà de 10/s sans erreur"
+          }
+        }
+      ],
+      "answerId": "c",
+      "explanation": {
+        "en": "increment() is atomic but still a write to one document, and a single document's practical sustained write rate is around 1/sec before contention (and then errors) shows up — 40/sec on one document is 40x over that. There is no automatic sharding of a hot document; the fix is a distributed counter (write to N shard sub-documents, sum on read), not code-level tricks.",
+        "fr": "increment() est atomique mais reste une écriture sur un seul document, et le débit d'écriture soutenu pratique d'un document unique tourne autour d'1/s avant que la contention (puis des erreurs) n'apparaisse — 40/s sur un seul document, c'est 40 fois ce seuil. Il n'y a pas de sharding automatique d'un document chaud ; le correctif est un compteur distribué (écrire sur N sous-documents shard, sommer à la lecture), pas une astuce de code."
+      },
+      "difficulty": 2
+    },
+    {
+      "id": "ex-databases-alloydb-migration",
+      "kind": "mcq",
+      "prompt": {
+        "en": "A team on Cloud SQL for PostgreSQL wants to add a live analytics dashboard querying the same transactional tables in real time, without building a separate BigQuery pipeline. What's the appropriate move?",
+        "fr": "Une équipe sur Cloud SQL pour PostgreSQL veut ajouter un dashboard analytique temps réel interrogeant les mêmes tables transactionnelles, sans construire un pipeline BigQuery séparé. Quelle est la démarche appropriée ?"
+      },
+      "choices": [
+        {
+          "id": "a",
+          "label": {
+            "en": "Migrate to Spanner for its SQL support",
+            "fr": "Migrer vers Spanner pour son support SQL"
+          }
+        },
+        {
+          "id": "b",
+          "label": {
+            "en": "Migrate to AlloyDB, which adds an in-memory columnar engine for fast analytical scans alongside normal transactional writes",
+            "fr": "Migrer vers AlloyDB, qui ajoute un moteur colonnaire en mémoire pour des scans analytiques rapides aux côtés des écritures transactionnelles normales"
+          }
+        },
+        {
+          "id": "c",
+          "label": {
+            "en": "Add more read replicas to Cloud SQL and run analytics there",
+            "fr": "Ajouter plus de read replicas à Cloud SQL et y exécuter l'analytique"
+          }
+        },
+        {
+          "id": "d",
+          "label": {
+            "en": "Switch to Bigtable and rebuild the dashboard queries as key scans",
+            "fr": "Passer à Bigtable et reconstruire les requêtes du dashboard en scans par clé"
+          }
+        }
+      ],
+      "answerId": "b",
+      "explanation": {
+        "en": "This is exactly AlloyDB's design point: HTAP via a columnar engine layered on a Postgres-compatible engine, so analytical queries run fast against live transactional data without ETL. Read replicas help with read scaling but don't give the columnar acceleration analytics needs; Spanner solves a different problem (global consistency, not analytics); Bigtable has no SQL and no secondary indexes, a poor fit for ad-hoc dashboard queries.",
+        "fr": "C'est exactement le point de conception d'AlloyDB : HTAP via un moteur colonnaire posé sur un moteur compatible Postgres, donc les requêtes analytiques sont rapides sur des données transactionnelles vivantes, sans ETL. Les read replicas aident la montée en charge en lecture mais n'apportent pas l'accélération colonnaire nécessaire à l'analytique ; Spanner résout un autre problème (cohérence mondiale, pas l'analytique) ; Bigtable n'a ni SQL ni index secondaires, mal adapté aux requêtes de dashboard ad hoc."
+      },
+      "difficulty": 1
+    },
+    {
+      "id": "ex-databases-interleaved-bug",
+      "kind": "find-bug",
+      "prompt": {
+        "en": "This Spanner schema for an e-commerce order system suffers from slow order-detail reads (order + its line items) even though each query only touches one order's data. Find the bug.",
+        "fr": "Ce schéma Spanner pour un système de commandes e-commerce souffre de lectures de détail de commande lentes (commande + ses articles) alors que chaque requête ne touche que les données d'une seule commande. Trouvez le bug."
+      },
+      "code": "CREATE TABLE Orders (\n  OrderId STRING(36) NOT NULL,\n  CustomerId INT64 NOT NULL,\n  CreatedAt TIMESTAMP NOT NULL,\n) PRIMARY KEY (OrderId);\n\nCREATE TABLE OrderItems (\n  ItemId STRING(36) NOT NULL,\n  OrderId STRING(36) NOT NULL,\n  Sku STRING(64) NOT NULL,\n  Qty INT64 NOT NULL,\n) PRIMARY KEY (ItemId);\n\n-- App code:\n-- SELECT * FROM Orders WHERE OrderId = @id;\n-- SELECT * FROM OrderItems WHERE OrderId = @id;",
+      "choices": [
+        {
+          "id": "a",
+          "label": {
+            "en": "OrderItems should use INT64 instead of STRING for ItemId",
+            "fr": "OrderItems devrait utiliser INT64 au lieu de STRING pour ItemId"
+          }
+        },
+        {
+          "id": "b",
+          "label": {
+            "en": "OrderItems is keyed on ItemId alone and not interleaved in Orders, so its rows for one order scatter across splits instead of being co-located",
+            "fr": "OrderItems est indexé sur ItemId seul et n'est pas interleaved dans Orders, donc ses lignes pour une commande se dispersent entre splits au lieu d'être co-localisées"
+          }
+        },
+        {
+          "id": "c",
+          "label": {
+            "en": "Spanner queries cannot use WHERE clauses on non-key columns",
+            "fr": "Les requêtes Spanner ne peuvent pas utiliser de clauses WHERE sur des colonnes non-clé"
+          }
+        },
+        {
+          "id": "d",
+          "label": {
+            "en": "The bug is that CreatedAt is not part of the primary key",
+            "fr": "Le bug est que CreatedAt ne fait pas partie de la clé primaire"
+          }
+        }
+      ],
+      "answerId": "b",
+      "explanation": {
+        "en": "Because OrderItems is keyed purely on ItemId (not composite on OrderId, ItemId) and not declared INTERLEAVE IN PARENT Orders, its rows for a given order are scattered wherever their ItemId happens to sort, forcing a distributed lookup instead of a local co-located read. The fix: PRIMARY KEY (OrderId, ItemId) with INTERLEAVE IN PARENT Orders, so all items of an order live on the same split as the order itself.",
+        "fr": "Comme OrderItems est indexé uniquement sur ItemId (pas de composite OrderId, ItemId) et n'est pas déclaré INTERLEAVE IN PARENT Orders, ses lignes pour une commande donnée sont dispersées selon le tri de leur ItemId, forçant une recherche distribuée au lieu d'une lecture locale co-localisée. Le correctif : PRIMARY KEY (OrderId, ItemId) avec INTERLEAVE IN PARENT Orders, pour que tous les articles d'une commande vivent sur le même split que la commande elle-même."
+      },
+      "difficulty": 3
+    },
+    {
+      "id": "ex-databases-spanner-cost",
+      "kind": "mcq",
+      "prompt": {
+        "en": "A startup runs a single-region app at 80 req/s, expects to stay well under 500 req/s for the next two years, and has no multi-region requirement. An engineer proposes Spanner \"so we never have to migrate later.\" What is the strongest counter-argument?",
+        "fr": "Une startup fait tourner une appli mono-région à 80 req/s, s'attend à rester bien en dessous de 500 req/s pendant deux ans, et n'a aucun besoin multi-région. Un ingénieur propose Spanner « pour ne jamais avoir à migrer plus tard ». Quel est le contre-argument le plus solide ?"
+      },
+      "choices": [
+        {
+          "id": "a",
+          "label": {
+            "en": "Spanner cannot run in a single region",
+            "fr": "Spanner ne peut pas tourner dans une seule région"
+          }
+        },
+        {
+          "id": "b",
+          "label": {
+            "en": "Spanner's node/PU floor cost and schema-design tax (interleaving, key choice) are paid from day one for a scale requirement that may never materialize, while Cloud SQL migrations to Spanner later are a well-understood path if it's ever needed",
+            "fr": "Le coût plancher nœud/PU de Spanner et sa taxe de conception de schéma (interleaving, choix de clé) sont payés dès le premier jour pour un besoin d'échelle qui ne se matérialisera peut-être jamais, alors qu'une migration ultérieure de Cloud SQL vers Spanner est un chemin bien connu si le besoin survient un jour"
+          }
+        },
+        {
+          "id": "c",
+          "label": {
+            "en": "Spanner doesn't support ACID transactions",
+            "fr": "Spanner ne supporte pas les transactions ACID"
+          }
+        },
+        {
+          "id": "d",
+          "label": {
+            "en": "Cloud SQL cannot be migrated to Spanner at all, so this is a one-way door either way",
+            "fr": "Cloud SQL ne peut absolument pas être migré vers Spanner, donc c'est une porte à sens unique de toute façon"
+          }
+        }
+      ],
+      "answerId": "b",
+      "explanation": {
+        "en": "The real cost of premature Spanner adoption isn't a technical limitation, it's paying a real per-month floor and an ongoing schema-design tax (avoiding hotspots, designing interleaving) for scale requirements that don't exist yet, while slowing early iteration. Spanner runs fine single-region, does support ACID, and later migration from a relational schema to Spanner — while real engineering work — is a well-trodden path when the need actually arrives; it's not a reason to pre-pay the cost now.",
+        "fr": "Le vrai coût d'une adoption prématurée de Spanner n'est pas une limitation technique, c'est de payer un plancher mensuel réel et une taxe continue de conception de schéma (éviter les points chauds, concevoir l'interleaving) pour un besoin d'échelle qui n'existe pas encore, tout en ralentissant l'itération précoce. Spanner tourne très bien en région unique, supporte bien ACID, et une migration ultérieure d'un schéma relationnel vers Spanner — bien que du vrai travail d'ingénierie — est un chemin bien balisé le jour où le besoin arrive réellement ; ce n'est pas une raison de prépayer le coût maintenant."
+      },
+      "difficulty": 3
+    },
+    {
+      "id": "ex-databases-bigtable-rowkey-predict",
+      "kind": "predict-output",
+      "prompt": {
+        "en": "A team ingests IoT sensor readings into Bigtable using this row-key scheme, at high volume across 10,000 devices. What will they observe in production?",
+        "fr": "Une équipe ingère des relevés de capteurs IoT dans Bigtable avec ce schéma de row key, à fort volume sur 10 000 appareils. Que va-t-elle observer en production ?"
+      },
+      "code": "row_key = f\"{unix_timestamp_ms}#{device_id}\"",
+      "choices": [
+        {
+          "id": "a",
+          "label": {
+            "en": "Even load across all tablet servers, since 10,000 devices provide enough variety",
+            "fr": "Une charge homogène sur tous les tablet servers, car 10 000 appareils apportent assez de variété"
+          }
+        },
+        {
+          "id": "b",
+          "label": {
+            "en": "Hotspotting on the currently-active tablet server, since keys are prefixed by a near-identical, always-increasing timestamp",
+            "fr": "Un point chaud sur le tablet server actuellement actif, car les clés sont préfixées par un horodatage quasi identique et toujours croissant"
+          }
+        },
+        {
+          "id": "c",
+          "label": {
+            "en": "An error at write time, since Bigtable rejects timestamp-prefixed keys",
+            "fr": "Une erreur à l'écriture, car Bigtable rejette les clés préfixées par un horodatage"
+          }
+        },
+        {
+          "id": "d",
+          "label": {
+            "en": "Perfect performance, since the device_id suffix guarantees uniqueness",
+            "fr": "Une performance parfaite, car le suffixe device_id garantit l'unicité"
+          }
+        }
+      ],
+      "answerId": "b",
+      "explanation": {
+        "en": "Prefixing by timestamp means all devices' concurrent writes land in the same narrow, constantly-advancing key range — the classic Bigtable hotspot, identical in spirit to a monotonic Spanner key. Uniqueness (guaranteed by the device_id suffix) doesn't help: the problem is where in the key-sorted order writes land, not whether keys collide. The fix is to lead with device_id (or a hash/salt) so writes spread across tablet servers, keeping timestamp as a suffix for range scans per device.",
+        "fr": "Préfixer par l'horodatage signifie que les écritures concurrentes de tous les appareils atterrissent dans la même plage de clés étroite et constamment croissante — le point chaud Bigtable classique, identique en esprit à une clé Spanner monotone. L'unicité (garantie par le suffixe device_id) n'aide pas : le problème est où, dans l'ordre trié des clés, les écritures atterrissent, pas si les clés entrent en collision. Le correctif est de faire précéder par device_id (ou un hachage/sel) pour que les écritures se répartissent entre tablet servers, en gardant l'horodatage en suffixe pour les scans de plage par appareil."
+      },
+      "difficulty": 2
+    }
+  ]
+}

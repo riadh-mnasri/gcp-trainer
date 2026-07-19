@@ -1,0 +1,658 @@
+{
+  "id": "storage",
+  "title": { "en": "Storage", "fr": "Stockage" },
+  "tagline": {
+    "en": "Cloud Storage, persistent disks, Filestore",
+    "fr": "Cloud Storage, disques persistants, Filestore"
+  },
+  "icon": "🗄️",
+  "lessons": [
+    {
+      "id": "storage-cs-fundamentals",
+      "title": {
+        "en": "Cloud Storage fundamentals: classes, locations, lifecycle",
+        "fr": "Fondamentaux de Cloud Storage : classes, emplacements, cycle de vie"
+      },
+      "minutes": 5,
+      "blocks": [
+        {
+          "type": "text",
+          "body": {
+            "en": "Storage classes differ by minimum storage duration and retrieval economics, not by durability or first-byte latency, which are identical across all four: Standard (no minimum, frequent access), Nearline (30-day minimum, roughly monthly access), Coldline (90-day minimum, roughly quarterly), Archive (365-day minimum, at most once a year, cheapest storage price but the highest retrieval cost and a multi-hour-class access pattern in practice). Picking a class is really picking a bet on how often you will touch the data again.",
+            "fr": "Les classes de stockage se distinguent par la durée minimale de conservation et l'économie de récupération, pas par la durabilité ni la latence au premier octet, identiques sur les quatre : Standard (aucun minimum, accès fréquent), Nearline (minimum 30 jours, accès environ mensuel), Coldline (minimum 90 jours, environ trimestriel), Archive (minimum 365 jours, au plus une fois par an, le prix de stockage le plus bas mais le coût de récupération le plus élevé et, en pratique, un accès à traiter comme différé). Choisir une classe, c'est parier sur la fréquence à laquelle vous retoucherez la donnée."
+          }
+        },
+        {
+          "type": "text",
+          "body": {
+            "en": "Bucket location types trade latency, cost and resilience: region (single region, lowest latency and cost, no resilience to a regional outage), dual-region (two named regions with optional turbo replication for a tight recovery point objective, geo-redundant at roughly a Nearline-class premium), multi-region (a broad geography like EU or US, highest availability and cost, more latency variance since any of several regions may serve a request). Bucket names live in one global namespace shared by every GCP customer — a name collision with another company is common — but the location, once chosen at creation, is permanent; relocating means copying every object into a new bucket.",
+            "fr": "Les types d'emplacement de bucket arbitrent latence, coût et résilience : région (une seule région, latence et coût minimaux, aucune résilience à une panne régionale), double région (deux régions nommées avec réplication turbo optionnelle pour un point de reprise serré, géo-redondance à un surcoût proche de la classe Nearline), multi-région (une vaste zone géographique comme l'UE ou les US, disponibilité et coût maximaux, plus de variance de latence puisque plusieurs régions peuvent servir une requête). Les noms de bucket vivent dans un espace de noms global partagé par tous les clients GCP — une collision de nom avec une autre entreprise est courante — mais l'emplacement, choisi une fois à la création, est définitif ; le relocaliser implique de copier tous les objets vers un nouveau bucket."
+          }
+        },
+        {
+          "type": "code",
+          "code": "gcloud storage buckets create gs://my-app-exports \\\n  --location=europe-west1 \\\n  --default-storage-class=STANDARD \\\n  --uniform-bucket-level-access\n\n# Lifecycle rule: cool then delete\ncat > lifecycle.json <<'EOF'\n{\n  \"rule\": [\n    { \"action\": {\"type\": \"SetStorageClass\", \"storageClass\": \"NEARLINE\"},\n      \"condition\": {\"age\": 30} },\n    { \"action\": {\"type\": \"SetStorageClass\", \"storageClass\": \"COLDLINE\"},\n      \"condition\": {\"age\": 90} },\n    { \"action\": {\"type\": \"Delete\"},\n      \"condition\": {\"age\": 400} }\n  ]\n}\nEOF\ngcloud storage buckets update gs://my-app-exports --lifecycle-file=lifecycle.json",
+          "caption": {
+            "en": "A lifecycle policy is the declarative alternative to a cron job that shuffles objects between classes.",
+            "fr": "Une politique de cycle de vie est l'alternative déclarative à un cron job qui déplace des objets entre classes."
+          }
+        },
+        {
+          "type": "gotcha",
+          "body": {
+            "en": "Minimum storage duration is billed even if you delete or overwrite the object earlier: an object moved to Coldline (90-day minimum) and deleted at day 35 by an over-eager cleanup job still bills the remaining 55 days as an early-deletion charge. This bites teams who apply aggressive lifecycle transitions to logs and then run a separate, uncoordinated retention/cleanup script.",
+            "fr": "La durée minimale de conservation est facturée même si vous supprimez ou écrasez l'objet plus tôt : un objet passé en Coldline (minimum 90 jours) et supprimé au jour 35 par un job de nettoyage trop zélé facture quand même les 55 jours restants en frais de suppression anticipée. Cela piège les équipes qui appliquent des transitions de cycle de vie agressives sur des logs puis exécutent un script de rétention séparé et non coordonné."
+          }
+        },
+        {
+          "type": "tip",
+          "body": {
+            "en": "Autoclass automatically migrates objects between Standard, Nearline, Coldline and Archive based on real access patterns, removing the guesswork of hand-tuned lifecycle rules — at a small per-object monitoring fee, and it cannot be combined with your own class-transition rules on the same bucket (deletion rules still apply). Use it for buckets with unpredictable or mixed access; keep manual lifecycle rules for predictable, uniform data like nightly logs that always cool on the same schedule, where the monitoring fee buys nothing.",
+            "fr": "Autoclass migre automatiquement les objets entre Standard, Nearline, Coldline et Archive selon les schémas d'accès réels, éliminant le réglage manuel des règles de cycle de vie — moyennant de faibles frais de surveillance par objet, et incompatible avec vos propres règles de transition de classe sur le même bucket (les règles de suppression restent applicables). Utilisez-le pour des buckets à accès imprévisible ou mixte ; gardez des règles manuelles pour des données uniformes et prévisibles comme des logs nocturnes qui refroidissent toujours selon le même calendrier, où les frais de surveillance n'apportent rien."
+          }
+        }
+      ]
+    },
+    {
+      "id": "storage-cs-access-security",
+      "title": {
+        "en": "Cloud Storage access & security: IAM, signed URLs, CMEK",
+        "fr": "Accès & sécurité Cloud Storage : IAM, URL signées, CMEK"
+      },
+      "minutes": 5,
+      "blocks": [
+        {
+          "type": "text",
+          "body": {
+            "en": "Cloud Storage supports two access models: legacy ACLs, granted per object or per bucket and invisible to standard IAM tooling, and uniform bucket-level access, which disables ACLs entirely and enforces IAM as the single source of truth. Uniform access is the recommended default for every new bucket: it eliminates the classic surprise of a private bucket containing one object with a stray public ACL, and it makes every grant auditable through the same policy surface as the rest of the project. Enabling it is reversible for only 90 days, after which it locks in.",
+            "fr": "Cloud Storage propose deux modèles d'accès : les ACL historiques, accordées par objet ou par bucket et invisibles pour l'outillage IAM standard, et l'accès uniforme au niveau du bucket, qui désactive totalement les ACL et impose IAM comme unique source de vérité. L'accès uniforme est le défaut recommandé pour tout nouveau bucket : il élimine la surprise classique d'un bucket privé contenant un objet avec une ACL publique égarée, et rend chaque octroi auditable via la même surface de politique que le reste du projet. L'activer est réversible seulement pendant 90 jours, après quoi c'est définitif."
+          }
+        },
+        {
+          "type": "text",
+          "body": {
+            "en": "Signed URLs grant temporary, scoped access to a specific object to a caller who is not a GCP principal at all: a service account (or a user with the right permission) signs a URL with an expiration and a constrained HTTP verb, and anyone holding that URL can perform exactly that action until it expires — the standard pattern for browser uploads/downloads without proxying bytes through your backend. Public access prevention is a separate, org-policy-enforceable bucket setting that keeps a bucket non-public no matter what IAM bindings exist on it — defense in depth against an accidental allUsers grant, not a replacement for correct IAM.",
+            "fr": "Les URL signées accordent un accès temporaire et limité à un objet précis à un appelant qui n'est même pas un principal GCP : un compte de service (ou un utilisateur avec la bonne permission) signe une URL avec une expiration et un verbe HTTP contraint, et quiconque détient cette URL peut effectuer exactement cette action jusqu'à expiration — le motif standard pour des envois/téléchargements depuis un navigateur sans faire transiter les octets par votre backend. La prévention de l'accès public est un réglage de bucket distinct, imposable par politique d'organisation, qui maintient un bucket non public quels que soient les bindings IAM présents — une défense en profondeur contre un octroi accidentel à allUsers, pas un substitut à un IAM correct."
+          }
+        },
+        {
+          "type": "code",
+          "code": "# Signed URL valid for 15 minutes, PUT only\ngcloud storage sign-url gs://my-app-uploads/invoice-42.pdf \\\n  --http-verb=PUT \\\n  --duration=15m \\\n  --private-key-file=signer-key.json\n\n# Belt and suspenders: refuse public access regardless of IAM\ngcloud storage buckets update gs://my-app-uploads \\\n  --public-access-prevention",
+          "caption": {
+            "en": "Public access prevention closes the door even if someone later grants allUsers by mistake.",
+            "fr": "La prévention de l'accès public ferme la porte même si quelqu'un accorde allUsers par erreur plus tard."
+          }
+        },
+        {
+          "type": "gotcha",
+          "body": {
+            "en": "Uniform bucket-level access is not the same as \"private\": it only means access is governed exclusively by IAM, and IAM can still grant allUsers or allAuthenticatedUsers objectViewer, making the bucket fully public. Teams frequently conflate \"we enabled uniform access\" with \"we're safe from public exposure\" — the only setting that actually forbids public grants is public access prevention, and it must be turned on separately.",
+            "fr": "L'accès uniforme au niveau du bucket n'équivaut pas à « privé » : il signifie seulement que l'accès est régi exclusivement par IAM, et IAM peut toujours accorder objectViewer à allUsers ou allAuthenticatedUsers, rendant le bucket entièrement public. Les équipes confondent souvent « on a activé l'accès uniforme » avec « on est à l'abri d'une exposition publique » — le seul réglage qui interdit réellement les octrois publics est la prévention de l'accès public, à activer séparément."
+          }
+        },
+        {
+          "type": "tip",
+          "body": {
+            "en": "Every object is encrypted at rest by default with Google-managed keys — that box is always checked and needs no configuration. CMEK (customer-managed encryption keys via Cloud KMS) adds the ability to rotate, audit and revoke the key yourself, at the cost of an availability coupling to KMS and real rotation operations. The interview-grade distinction: reach for CMEK when a compliance mandate specifically requires customer control of the key, not as a default \"more security is always better\" reflex.",
+            "fr": "Chaque objet est chiffré au repos par défaut avec des clés gérées par Google — cette case est toujours cochée et ne demande aucune configuration. CMEK (clés de chiffrement gérées par le client via Cloud KMS) ajoute la capacité de faire tourner, auditer et révoquer la clé vous-même, au prix d'un couplage de disponibilité à KMS et d'une vraie opération de rotation. La distinction niveau entretien : recourez à CMEK quand une exigence de conformité impose spécifiquement le contrôle de la clé par le client, pas par réflexe « plus de sécurité, c'est toujours mieux »."
+          }
+        }
+      ]
+    },
+    {
+      "id": "storage-persistent-disks",
+      "title": {
+        "en": "Persistent Disks: types, resize, snapshots",
+        "fr": "Disques persistants : types, redimensionnement, snapshots"
+      },
+      "minutes": 5,
+      "blocks": [
+        {
+          "type": "text",
+          "body": {
+            "en": "Persistent disk types encode a price/performance intent much like machine families: pd-standard (HDD, cheapest, low IOPS, fine for large sequential reads like backups or batch scans), pd-balanced (SSD, the sane default for most VMs and boot disks), pd-ssd (SSD, higher and more consistent IOPS/throughput, for databases and latency-sensitive services), pd-extreme (SSD with IOPS provisioned independently of capacity, for the most demanding low-latency workloads). Hyperdisk (Balanced, Extreme, Throughput) is the next generation: capacity, IOPS and throughput become three separately provisioned dimensions instead of being size-derived, and it is the required or default disk family on newer machine types like C3/C4.",
+            "fr": "Les types de disque persistant encodent une intention prix/performance, à l'image des familles de machines : pd-standard (HDD, le moins cher, IOPS faibles, adapté aux lectures séquentielles massives comme les sauvegardes ou le scan batch), pd-balanced (SSD, le défaut raisonnable pour la plupart des VM et disques de boot), pd-ssd (SSD, IOPS/débit plus élevés et plus constants, pour les bases de données et services sensibles à la latence), pd-extreme (SSD avec IOPS provisionnées indépendamment de la capacité, pour les charges les plus exigeantes en latence). Hyperdisk (Balanced, Extreme, Throughput) est la génération suivante : capacité, IOPS et débit deviennent trois dimensions provisionnées séparément plutôt que dérivées de la taille, et c'est la famille de disque requise ou par défaut sur les machines récentes comme C3/C4."
+          }
+        },
+        {
+          "type": "text",
+          "body": {
+            "en": "A zonal PD lives in, and can only attach to VMs in, a single zone — cheapest, and the default choice. A regional PD synchronously replicates writes across two zones of a region so the disk survives a zone outage with a brief failover, at roughly double the cost and a real write-latency tax from that synchronous replication; reserve it for stateful, self-managed workloads (a hand-rolled database, say) that need HA without adopting a fully managed service. Because IOPS and throughput on pd-standard/balanced/ssd scale with provisioned size up to a per-type ceiling, resizing a disk upward is sometimes the cheapest way to buy performance headroom even when you don't need the extra capacity — Hyperdisk and pd-extreme decouple this by letting you provision IOPS on its own.",
+            "fr": "Un PD zonal vit dans une seule zone et ne peut se rattacher qu'à des VM de cette zone — le moins cher, et le choix par défaut. Un PD régional réplique les écritures de façon synchrone sur deux zones d'une région, si bien que le disque survit à une panne de zone avec un bref basculement, pour environ le double du coût et une réelle pénalité de latence d'écriture due à cette réplication synchrone ; réservez-le aux charges stateful auto-gérées (une base de données maison, par exemple) qui ont besoin de HA sans adopter un service pleinement managé. Comme les IOPS et le débit de pd-standard/balanced/ssd évoluent avec la taille provisionnée jusqu'à un plafond par type, agrandir un disque est parfois le moyen le moins cher d'acheter de la marge de performance même sans besoin de capacité supplémentaire — Hyperdisk et pd-extreme découplent cela en permettant de provisionner les IOPS séparément."
+          }
+        },
+        {
+          "type": "code",
+          "code": "# Grow a disk, then grow the filesystem — two separate steps\ngcloud compute disks resize api-data-disk \\\n  --zone=europe-west1-b \\\n  --size=500GB\n\nsudo growpart /dev/sdb 1 && sudo resize2fs /dev/sdb1\n\n# Scheduled incremental snapshots\ngcloud compute resource-policies create snapshot-schedule daily-snap \\\n  --region=europe-west1 \\\n  --daily-schedule --start-time=03:00 \\\n  --max-retention-days=14",
+          "caption": {
+            "en": "Resizing the block device does nothing for available space until the filesystem itself is grown.",
+            "fr": "Redimensionner le périphérique bloc ne libère aucun espace tant que le système de fichiers lui-même n'a pas grandi."
+          }
+        },
+        {
+          "type": "gotcha",
+          "body": {
+            "en": "A disk resize only ever grows (never shrinks) and only resizes the block device — the OS filesystem must be extended separately (growpart + resize2fs, or the Windows equivalent). Teams routinely run the gcloud resize, see it succeed, and then wonder why `df -h` still shows the old size: the second step was never run.",
+            "fr": "Un redimensionnement de disque ne fait qu'agrandir (jamais rétrécir) et ne redimensionne que le périphérique bloc — le système de fichiers doit être étendu séparément (growpart + resize2fs, ou l'équivalent Windows). Les équipes lancent le resize gcloud, le voient réussir, puis se demandent pourquoi `df -h` affiche toujours l'ancienne taille : la seconde étape n'a jamais été exécutée."
+          }
+        },
+        {
+          "type": "tip",
+          "body": {
+            "en": "Incremental snapshots only store the blocks changed since the previous snapshot, and — contrary to intuition — deleting an older snapshot in the chain does not delete data still referenced by newer ones; GCP reconciles the chain so you are billed roughly for unique data, not naively multiplied by snapshot count. Still, an aggressive retention schedule on a rapidly-churning disk (think a write-heavy database) can surprise a cost review, since \"unique data\" grows with every write pattern that touches new blocks. Default the boot disk to pd-balanced or pd-ssd, never pd-standard, which throttles the small random I/O an OS needs during boot.",
+            "fr": "Les snapshots incrémentaux ne stockent que les blocs modifiés depuis le snapshot précédent et, contre-intuitivement, supprimer un ancien snapshot de la chaîne ne supprime pas les données encore référencées par les plus récents ; GCP réconcilie la chaîne, si bien que la facturation suit à peu près la donnée unique, sans multiplication naïve par le nombre de snapshots. Une planification de rétention agressive sur un disque à forte rotation (une base d'écriture intensive, par exemple) peut néanmoins surprendre une revue de coûts, la « donnée unique » croissant avec tout schéma d'écriture touchant de nouveaux blocs. Par défaut, choisissez pd-balanced ou pd-ssd pour le disque de boot, jamais pd-standard, qui bride les petites E/S aléatoires dont l'OS a besoin au démarrage."
+          }
+        }
+      ]
+    },
+    {
+      "id": "storage-filestore",
+      "title": {
+        "en": "Filestore: managed NFS for shared filesystems",
+        "fr": "Filestore : NFS managé pour systèmes de fichiers partagés"
+      },
+      "minutes": 4,
+      "blocks": [
+        {
+          "type": "text",
+          "body": {
+            "en": "Filestore is managed NFS: you mount it as a real filesystem with POSIX semantics — file locking, directory renames, concurrent read-write from many clients — unlike Cloud Storage, which is object storage accessed over an HTTP API and is not a filesystem no matter how it's mounted. Reach for Filestore when legacy or off-the-shelf software expects an actual mounted volume: home directories, render farms, CMS media uploads, shared configuration read by many instances. Lift-and-shift migrations off an on-prem NFS/NAS appliance are the textbook case; new cloud-native designs should default to object storage or a managed database instead.",
+            "fr": "Filestore est du NFS managé : on le monte comme un vrai système de fichiers avec sémantique POSIX — verrouillage de fichiers, renommage de répertoires, lecture-écriture concurrente depuis plusieurs clients — contrairement à Cloud Storage, du stockage objet accessible via une API HTTP qui n'est pas un système de fichiers, quel que soit le montage utilisé. Recourez à Filestore quand un logiciel legacy ou du commerce attend un vrai volume monté : répertoires personnels, fermes de rendu, médias uploadés par un CMS, configuration partagée lue par de nombreuses instances. Les migrations lift-and-shift depuis une appliance NFS/NAS on-prem sont le cas d'école ; les conceptions cloud-natives neuves doivent d'abord viser le stockage objet ou une base managée."
+          }
+        },
+        {
+          "type": "text",
+          "body": {
+            "en": "Tiers trade cost, capacity granularity and performance: Basic HDD (cheapest, lowest IOPS, coarse capacity steps), Basic SSD (higher IOPS and throughput, same coarse steps), Zonal (the current generation, capacity and performance independently and finely scalable within one zone), Enterprise (multi-zone regional replication for high availability production workloads, the highest cost). The older Basic tiers force large capacity jumps that can push you into paying for headroom you don't need — Zonal is the better default for new deployments precisely because it scales more granularly.",
+            "fr": "Les niveaux arbitrent coût, granularité de capacité et performance : Basic HDD (le moins cher, IOPS les plus faibles, paliers de capacité grossiers), Basic SSD (IOPS et débit plus élevés, mêmes paliers grossiers), Zonal (génération actuelle, capacité et performance évolutives finement et indépendamment dans une zone), Enterprise (réplication régionale multi-zone pour la haute disponibilité en production, le coût le plus élevé). Les niveaux Basic, plus anciens, imposent de gros sauts de capacité qui peuvent forcer à payer une marge inutile — Zonal est le meilleur défaut pour du neuf, précisément parce qu'il évolue plus finement."
+          }
+        },
+        {
+          "type": "code",
+          "code": "gcloud filestore instances create shared-nfs \\\n  --zone=europe-west1-b \\\n  --tier=ZONAL \\\n  --file-share=name=\"data\",capacity=2TB \\\n  --network=name=\"default\"\n\n# GKE: mount the same share from many pods via the Filestore CSI driver\napiVersion: v1\nkind: PersistentVolume\nmetadata:\n  name: shared-nfs-pv\nspec:\n  capacity: { storage: 2Ti }\n  accessModes: [\"ReadWriteMany\"]\n  csi:\n    driver: filestore.csi.storage.gke.io\n    volumeHandle: modeInstance/europe-west1-b/shared-nfs/data\n    volumeAttributes: { ip: \"10.0.0.2\", volume: \"data\" }",
+          "caption": {
+            "en": "ReadWriteMany across pods is the thing Filestore gives you that a persistent disk cannot.",
+            "fr": "ReadWriteMany entre pods, c'est ce que Filestore offre et qu'un disque persistant ne peut pas donner."
+          }
+        },
+        {
+          "type": "gotcha",
+          "body": {
+            "en": "Cloud Storage FUSE mounts a bucket as a convenience filesystem, but it is not POSIX-complete: no real file locking, weaker rename semantics, and materially higher per-operation latency than genuine NFS. It's fine for read-mostly workloads or staging batch data in and out; it is the wrong choice for an application doing heavy concurrent read-modify-write file operations, which will surface subtle correctness bugs that only Filestore's real filesystem semantics avoid.",
+            "fr": "Cloud Storage FUSE monte un bucket en système de fichiers de confort, mais il n'est pas complètement POSIX : pas de vrai verrouillage de fichiers, sémantique de renommage plus faible, et une latence par opération nettement supérieure à un vrai NFS. Il convient pour des charges majoritairement en lecture ou pour faire transiter du batch ; c'est le mauvais choix pour une application faisant beaucoup de lecture-modification-écriture concurrente de fichiers, qui révélera des bugs de cohérence subtils que seule la vraie sémantique filesystem de Filestore évite."
+          }
+        },
+        {
+          "type": "tip",
+          "body": {
+            "en": "Filestore bills for provisioned capacity regardless of how much data you actually store, exactly like a persistent disk and unlike Cloud Storage's pay-per-byte model. For a shared team volume or a CI cache, pick the smallest tier and capacity that meets the real IOPS requirement and grow later — \"provisioning big to be safe\" on Filestore is a recurring line item a cost review will flag.",
+            "fr": "Filestore facture la capacité provisionnée, quelle que soit la donnée réellement stockée, exactement comme un disque persistant et contrairement au modèle au-poids-réel de Cloud Storage. Pour un volume d'équipe partagé ou un cache CI, choisissez le plus petit niveau et la plus petite capacité qui couvrent le vrai besoin en IOPS et agrandissez plus tard — « provisionner large par sécurité » sur Filestore est une ligne récurrente qu'une revue de coûts pointera."
+          }
+        }
+      ]
+    },
+    {
+      "id": "storage-choosing-cost",
+      "title": {
+        "en": "Choosing the right storage, and cost footguns",
+        "fr": "Choisir le bon stockage, et les pièges de coût"
+      },
+      "minutes": 5,
+      "blocks": [
+        {
+          "type": "text",
+          "body": {
+            "en": "The interview-grade decision tree: unstructured blobs accessed over an API — images, backups, ML training data, static assets — go to Cloud Storage. Block storage attached to and owned by a single VM (or a small self-managed cluster) that needs real filesystem semantics goes to a Persistent Disk. A filesystem shared concurrently by multiple VMs or pods, with POSIX guarantees, goes to Filestore. And if the data is structured and needs to be queried rather than fetched by key, none of the three is right — that's a database question, not a storage one.",
+            "fr": "L'arbre de décision niveau entretien : des blobs non structurés accédés via une API — images, sauvegardes, données d'entraînement ML, assets statiques — vont sur Cloud Storage. Du stockage bloc attaché à et possédé par une seule VM (ou un petit cluster auto-géré) ayant besoin d'une vraie sémantique filesystem va sur un disque persistant. Un système de fichiers partagé simultanément par plusieurs VM ou pods, avec des garanties POSIX, va sur Filestore. Et si la donnée est structurée et doit être interrogée plutôt que récupérée par clé, aucun des trois ne convient — c'est une question de base de données, pas de stockage."
+          }
+        },
+        {
+          "type": "text",
+          "body": {
+            "en": "Storage Transfer Service moves data at scale between Cloud Storage, other clouds (S3, Azure Blob) or an on-prem source, with built-in scheduling, checksums and retries — the correct answer to \"migrate or mirror petabytes\" instead of a hand-rolled parallel gsutil/rsync script. Egress is the classic budget surprise: reads within the same region are essentially free, but cross-region reads and internet egress are billed per GB, and multi-region or dual-region buckets quietly amplify this because any given read may cross a region boundary you didn't think about when you picked \"multi-region\" for convenience.",
+            "fr": "Storage Transfer Service déplace des données à grande échelle entre Cloud Storage, d'autres clouds (S3, Azure Blob) ou une source on-prem, avec planification, sommes de contrôle et retries intégrés — la bonne réponse à « migrer ou dupliquer des pétaoctets » plutôt qu'un script gsutil/rsync parallèle maison. L'egress est la surprise budgétaire classique : les lectures dans la même région sont quasi gratuites, mais les lectures inter-régions et l'egress internet sont facturés au Go, et les buckets multi-région ou double région amplifient discrètement cela car une lecture donnée peut traverser une frontière régionale à laquelle on n'a pas pensé en choisissant « multi-région » par confort."
+          }
+        },
+        {
+          "type": "code",
+          "code": "# Bulk migrate from S3 into Cloud Storage on a schedule\ngcloud transfer jobs create s3://legacy-bucket gs://my-app-archive \\\n  --source-creds-file=aws-creds.json \\\n  --schedule-repeats-every=1d\n\n# Bucket lock: retention policy that nobody can shorten once locked\ngcloud storage buckets update gs://compliance-records \\\n  --retention-period=7y\ngcloud storage buckets lock gs://compliance-records",
+          "caption": {
+            "en": "Locking a retention policy is a one-way door — test on a throwaway bucket first.",
+            "fr": "Verrouiller une politique de rétention est une porte à sens unique — testez d'abord sur un bucket jetable."
+          }
+        },
+        {
+          "type": "gotcha",
+          "body": {
+            "en": "A retention policy combined with bucket lock is irreversible: once locked, no one — not even the project owner — can shorten or remove the policy, or delete the objects it protects, before the retention period expires, and this holds even against `gsutil rm -r` or project-level cleanup. Applying a compliance retention policy to the wrong bucket (a scratch or staging bucket, say) is effectively unrecoverable for the full retention window. Always rehearse the exact commands on a throwaway bucket, and require change-control sign-off before locking anything in production.",
+            "fr": "Une politique de rétention combinée au bucket lock est irréversible : une fois verrouillée, personne — pas même le propriétaire du projet — ne peut raccourcir ou retirer la politique, ni supprimer les objets qu'elle protège, avant l'expiration de la rétention, y compris face à `gsutil rm -r` ou un nettoyage au niveau projet. Appliquer une politique de rétention de conformité au mauvais bucket (un bucket de test ou de staging, par exemple) est en pratique irrécupérable pendant toute la fenêtre de rétention. Répétez toujours les commandes exactes sur un bucket jetable, et exigez une validation de change-control avant de verrouiller quoi que ce soit en production."
+          }
+        },
+        {
+          "type": "tip",
+          "body": {
+            "en": "Requester pays flips who is billed for egress and operations to the caller instead of the bucket owner — useful when you host a public dataset but don't want to fund everyone else's downloads. It requires every caller to supply a billing project on each request, which silently breaks anonymous or naively public consumption unless callers are equipped for it. Beyond that one switch, real egress control is mostly architectural: colocate compute with its bucket's region, put Cloud CDN in front of public read-heavy buckets, and prefer Storage Transfer Service over ad hoc parallel copies for any bulk cross-region move.",
+            "fr": "Requester pays fait basculer la facturation de l'egress et des opérations vers l'appelant plutôt que le propriétaire du bucket — utile pour héberger un jeu de données public sans financer les téléchargements de tout le monde. Cela exige que chaque appelant fournisse un projet de facturation à chaque requête, ce qui casse silencieusement une consommation anonyme ou publique naïve si les appelants n'y sont pas préparés. Au-delà de ce seul interrupteur, la maîtrise réelle de l'egress est surtout architecturale : colocaliser le calcul avec la région du bucket, mettre Cloud CDN devant les buckets publics à forte lecture, et préférer Storage Transfer Service à des copies parallèles improvisées pour tout déplacement massif inter-régions."
+          }
+        }
+      ]
+    }
+  ],
+  "flashcards": [
+    {
+      "id": "fc-storage-classes",
+      "front": {
+        "en": "Standard, Nearline, Coldline, Archive: what actually differs between them?",
+        "fr": "Standard, Nearline, Coldline, Archive : qu'est-ce qui diffère réellement entre elles ?"
+      },
+      "back": {
+        "en": "Minimum storage duration and retrieval cost — not durability or first-byte latency, identical across all four. Standard: no minimum, frequent access. Nearline: 30 days. Coldline: 90 days. Archive: 365 days, cheapest storage, priciest retrieval.",
+        "fr": "La durée minimale de conservation et le coût de récupération — pas la durabilité ni la latence au premier octet, identiques sur les quatre. Standard : aucun minimum, accès fréquent. Nearline : 30 jours. Coldline : 90 jours. Archive : 365 jours, stockage le moins cher, récupération la plus chère."
+      }
+    },
+    {
+      "id": "fc-storage-locations",
+      "front": {
+        "en": "Region vs dual-region vs multi-region buckets: what's the trade-off, and what never changes once created?",
+        "fr": "Bucket région vs double région vs multi-région : quel compromis, et qu'est-ce qui ne change jamais après création ?"
+      },
+      "back": {
+        "en": "Region: lowest latency/cost, no regional-outage resilience. Dual-region: two named regions, geo-redundant, optional turbo replication. Multi-region: broadest availability, highest cost/latency variance. The bucket's location is permanent — relocating means copying all objects to a new bucket.",
+        "fr": "Région : latence/coût minimaux, aucune résilience à une panne régionale. Double région : deux régions nommées, géo-redondante, réplication turbo optionnelle. Multi-région : disponibilité maximale, coût/variance de latence maximaux. L'emplacement du bucket est définitif — le relocaliser implique de copier tous les objets vers un nouveau bucket."
+      }
+    },
+    {
+      "id": "fc-storage-autoclass",
+      "front": {
+        "en": "What does Autoclass do, and what's the catch?",
+        "fr": "Que fait Autoclass, et quel est le piège ?"
+      },
+      "back": {
+        "en": "Automatically moves objects between storage classes based on real access patterns, removing manual lifecycle tuning. Catch: small per-object monitoring fee, and it can't be combined with your own class-transition lifecycle rules on the same bucket — best for unpredictable access, not uniform predictable data.",
+        "fr": "Déplace automatiquement les objets entre classes selon les accès réels, sans réglage manuel de cycle de vie. Piège : frais de surveillance par objet, et incompatible avec vos propres règles de transition de classe sur le même bucket — adapté à un accès imprévisible, pas à une donnée uniforme et prévisible."
+      }
+    },
+    {
+      "id": "fc-storage-uniform-access",
+      "front": {
+        "en": "Why is uniform bucket-level access the recommended default over ACLs?",
+        "fr": "Pourquoi l'accès uniforme au niveau du bucket est-il le défaut recommandé face aux ACL ?"
+      },
+      "back": {
+        "en": "It disables ACLs entirely and makes IAM the single source of truth, eliminating the surprise of a private bucket with one object under a stray public ACL, and making every grant auditable through the standard policy surface. Reversible for only 90 days after enabling.",
+        "fr": "Il désactive totalement les ACL et fait d'IAM l'unique source de vérité, éliminant la surprise d'un bucket privé avec un objet sous une ACL publique égarée, et rendant chaque octroi auditable via la surface de politique standard. Réversible seulement 90 jours après activation."
+      }
+    },
+    {
+      "id": "fc-storage-signed-urls",
+      "front": {
+        "en": "What problem do signed URLs solve, and how do they differ from public access prevention?",
+        "fr": "Quel problème résolvent les URL signées, et en quoi diffèrent-elles de la prévention de l'accès public ?"
+      },
+      "back": {
+        "en": "Signed URLs grant a non-GCP caller temporary, scoped access (verb + expiry) to one object without proxying bytes through your backend. Public access prevention is unrelated: an org/bucket setting that forbids public IAM grants outright, regardless of what bindings exist.",
+        "fr": "Les URL signées accordent à un appelant non-GCP un accès temporaire et limité (verbe + expiration) à un objet, sans faire transiter les octets par le backend. La prévention de l'accès public est différente : un réglage d'organisation/bucket qui interdit purement les octrois IAM publics, quels que soient les bindings existants."
+      }
+    },
+    {
+      "id": "fc-storage-cmek",
+      "front": {
+        "en": "When should you reach for CMEK instead of default encryption?",
+        "fr": "Quand recourir à CMEK plutôt qu'au chiffrement par défaut ?"
+      },
+      "back": {
+        "en": "Every object is already encrypted at rest with Google-managed keys by default, no configuration needed. CMEK (via Cloud KMS) is worth its operational cost and KMS availability coupling only when a compliance mandate specifically requires customer control/rotation/revocation of the key.",
+        "fr": "Chaque objet est déjà chiffré au repos avec des clés gérées par Google, sans configuration. CMEK (via Cloud KMS) ne vaut son coût opérationnel et son couplage de disponibilité à KMS que lorsqu'une exigence de conformité impose spécifiquement le contrôle/la rotation/la révocation de la clé par le client."
+      }
+    },
+    {
+      "id": "fc-storage-pd-types",
+      "front": {
+        "en": "pd-standard, pd-balanced, pd-ssd, pd-extreme, Hyperdisk: one line each.",
+        "fr": "pd-standard, pd-balanced, pd-ssd, pd-extreme, Hyperdisk : une ligne chacun."
+      },
+      "back": {
+        "en": "pd-standard: HDD, cheapest, low IOPS, sequential workloads. pd-balanced: SSD, sane default. pd-ssd: SSD, higher consistent IOPS for databases. pd-extreme: SSD, IOPS provisioned independent of size. Hyperdisk: capacity/IOPS/throughput as three independent dimensions, default on newer machine types.",
+        "fr": "pd-standard : HDD, le moins cher, IOPS faibles, charges séquentielles. pd-balanced : SSD, défaut raisonnable. pd-ssd : SSD, IOPS élevées et constantes pour bases de données. pd-extreme : SSD, IOPS provisionnées indépendamment de la taille. Hyperdisk : capacité/IOPS/débit en trois dimensions indépendantes, défaut sur les machines récentes."
+      }
+    },
+    {
+      "id": "fc-storage-zonal-regional-pd",
+      "front": {
+        "en": "Zonal PD vs regional PD: what do you gain and what does it cost?",
+        "fr": "PD zonal vs PD régional : que gagne-t-on et à quel coût ?"
+      },
+      "back": {
+        "en": "Regional PD synchronously replicates writes across two zones, surviving a zone outage with a brief failover, at roughly double the cost and a write-latency tax. Reserve it for stateful, self-managed workloads needing HA without a fully managed service; zonal is the cheaper default otherwise.",
+        "fr": "Le PD régional réplique les écritures de façon synchrone sur deux zones, survivant à une panne de zone avec un bref basculement, pour environ le double du coût et une pénalité de latence d'écriture. À réserver aux charges stateful auto-gérées ayant besoin de HA sans service pleinement managé ; le zonal reste le défaut moins cher sinon."
+      }
+    },
+    {
+      "id": "fc-storage-pd-resize",
+      "front": {
+        "en": "You grow a persistent disk with gcloud but the OS still reports the old size. What's missing?",
+        "fr": "Vous agrandissez un disque persistant avec gcloud mais l'OS affiche toujours l'ancienne taille. Que manque-t-il ?"
+      },
+      "back": {
+        "en": "The gcloud resize only grows the block device. The filesystem must be extended separately (growpart + resize2fs, or the Windows equivalent) — a routinely forgotten second step. Disks can only grow, never shrink.",
+        "fr": "Le resize gcloud n'agrandit que le périphérique bloc. Le système de fichiers doit être étendu séparément (growpart + resize2fs, ou l'équivalent Windows) — une seconde étape couramment oubliée. Les disques ne peuvent que grandir, jamais rétrécir."
+      }
+    },
+    {
+      "id": "fc-storage-filestore-tiers",
+      "front": {
+        "en": "Filestore tiers: Basic HDD/SSD, Zonal, Enterprise — what's the key difference and the better default for new deployments?",
+        "fr": "Niveaux Filestore : Basic HDD/SSD, Zonal, Enterprise — quelle différence clé et quel meilleur défaut pour du neuf ?"
+      },
+      "back": {
+        "en": "Basic tiers use coarse capacity steps, forcing overprovisioning; Zonal scales capacity and performance independently and finely within a zone — the better default. Enterprise adds multi-zone regional replication for HA production, at the highest cost.",
+        "fr": "Les niveaux Basic utilisent des paliers de capacité grossiers, forçant le surprovisionnement ; Zonal fait évoluer capacité et performance finement et indépendamment dans une zone — le meilleur défaut. Enterprise ajoute une réplication régionale multi-zone pour la HA en production, au coût le plus élevé."
+      }
+    },
+    {
+      "id": "fc-storage-fuse-vs-filestore",
+      "front": {
+        "en": "Cloud Storage FUSE vs Filestore for an app doing concurrent read-modify-write on files: which, and why?",
+        "fr": "Cloud Storage FUSE vs Filestore pour une appli faisant de la lecture-modification-écriture concurrente de fichiers : lequel, et pourquoi ?"
+      },
+      "back": {
+        "en": "Filestore. FUSE is not POSIX-complete (no real locking, weaker rename semantics, higher per-op latency) — fine for read-mostly or batch staging, but concurrent read-modify-write needs Filestore's genuine NFS filesystem semantics.",
+        "fr": "Filestore. FUSE n'est pas complètement POSIX (pas de vrai verrouillage, sémantique de renommage plus faible, latence par opération plus élevée) — adapté à un usage majoritairement en lecture ou au transit batch, mais la lecture-modification-écriture concurrente demande la vraie sémantique filesystem NFS de Filestore."
+      }
+    },
+    {
+      "id": "fc-storage-decision-tree",
+      "front": {
+        "en": "Object storage vs Persistent Disk vs Filestore: the one-question decision tree?",
+        "fr": "Stockage objet vs disque persistant vs Filestore : l'arbre de décision en une question ?"
+      },
+      "back": {
+        "en": "Unstructured blobs via API → Cloud Storage. Block storage owned by one VM needing filesystem semantics → Persistent Disk. Filesystem shared concurrently by many VMs/pods with POSIX guarantees → Filestore. Structured, queryable data → none of the three, that's a database.",
+        "fr": "Blobs non structurés via API → Cloud Storage. Stockage bloc possédé par une seule VM avec sémantique filesystem → disque persistant. Filesystem partagé simultanément par plusieurs VM/pods avec garanties POSIX → Filestore. Donnée structurée et interrogeable → aucun des trois, c'est une base de données."
+      }
+    },
+    {
+      "id": "fc-storage-sts-egress",
+      "front": {
+        "en": "What is Storage Transfer Service for, and what's the classic egress cost surprise?",
+        "fr": "À quoi sert Storage Transfer Service, et quelle est la surprise classique de coût d'egress ?"
+      },
+      "back": {
+        "en": "STS moves data at scale between Cloud Storage, other clouds or on-prem with scheduling/checksums/retries built in — the answer to migrating petabytes. Egress surprise: same-region reads are essentially free, but cross-region reads and internet egress bill per GB, amplified by multi/dual-region buckets whose reads may silently cross a region boundary.",
+        "fr": "STS déplace des données à grande échelle entre Cloud Storage, d'autres clouds ou l'on-prem, avec planification/sommes de contrôle/retries intégrés — la réponse pour migrer des pétaoctets. Surprise d'egress : les lectures dans la même région sont quasi gratuites, mais les lectures inter-régions et l'egress internet sont facturés au Go, amplifiés par les buckets multi/double région dont les lectures peuvent traverser une frontière régionale silencieusement."
+      }
+    },
+    {
+      "id": "fc-storage-bucket-lock-requester-pays",
+      "front": {
+        "en": "Bucket lock retention policies and requester pays: what does each one commit you to?",
+        "fr": "Politiques de rétention verrouillées (bucket lock) et requester pays : à quoi chacun vous engage-t-il ?"
+      },
+      "back": {
+        "en": "Bucket lock is a one-way door: once locked, nobody — including the project owner — can shorten the retention or delete protected objects before it expires. Requester pays shifts egress/operation billing to the caller, but every caller must then supply a billing project, breaking naive public/anonymous access.",
+        "fr": "Le bucket lock est une porte à sens unique : une fois verrouillé, personne — y compris le propriétaire du projet — ne peut raccourcir la rétention ni supprimer les objets protégés avant son expiration. Requester pays transfère la facturation d'egress/opérations vers l'appelant, mais chaque appelant doit alors fournir un projet de facturation, ce qui casse un accès public/anonyme naïf."
+      }
+    }
+  ],
+  "exercises": [
+    {
+      "id": "ex-storage-class-choice",
+      "kind": "mcq",
+      "prompt": {
+        "en": "Financial audit logs must be kept 7 years, are essentially never read unless an auditor requests them (at most once a year), and cost is the primary concern. Best storage class?",
+        "fr": "Des logs d'audit financier doivent être conservés 7 ans, ne sont quasiment jamais lus sauf demande d'un auditeur (au plus une fois par an), et le coût est la priorité. Quelle classe de stockage ?"
+      },
+      "choices": [
+        {
+          "id": "a",
+          "label": { "en": "Standard, for fast access whenever needed", "fr": "Standard, pour un accès rapide en cas de besoin" }
+        },
+        {
+          "id": "b",
+          "label": { "en": "Nearline, a safe middle ground", "fr": "Nearline, un compromis sûr" }
+        },
+        {
+          "id": "c",
+          "label": { "en": "Archive, given the access pattern of at most once a year", "fr": "Archive, vu l'accès au plus une fois par an" }
+        },
+        {
+          "id": "d",
+          "label": { "en": "Coldline, since Archive doesn't support lifecycle rules", "fr": "Coldline, car Archive ne supporte pas les règles de cycle de vie" }
+        }
+      ],
+      "answerId": "c",
+      "explanation": {
+        "en": "Archive has the lowest storage price and is designed exactly for once-a-year-or-less access; its higher per-retrieval cost is irrelevant at that frequency. Standard and Nearline overpay for storage the team never actually reads. Archive fully supports lifecycle rules, so d's premise is wrong.",
+        "fr": "Archive a le prix de stockage le plus bas et est conçue exactement pour un accès au plus une fois par an ; son coût de récupération plus élevé est négligeable à cette fréquence. Standard et Nearline surpaient un stockage jamais réellement lu. Archive supporte pleinement les règles de cycle de vie, la prémisse de d est donc fausse."
+      },
+      "difficulty": 1
+    },
+    {
+      "id": "ex-storage-early-deletion",
+      "kind": "predict-output",
+      "prompt": {
+        "en": "A lifecycle rule moves objects to Coldline (90-day minimum storage duration) at age 30. A separate cleanup job deletes objects older than 45 days for a different, unrelated retention reason. An object created on day 0 gets deleted by the cleanup job on day 46. What happens on the bill?",
+        "fr": "Une règle de cycle de vie passe les objets en Coldline (durée minimale de conservation 90 jours) à 30 jours. Un job de nettoyage séparé supprime les objets de plus de 45 jours pour une autre raison de rétention. Un objet créé au jour 0 est supprimé par ce job au jour 46. Que se passe-t-il sur la facture ?"
+      },
+      "choices": [
+        {
+          "id": "a",
+          "label": { "en": "Nothing extra: deletion at day 46 is well past the 30-day class transition", "fr": "Rien de plus : la suppression au jour 46 est bien après la transition de classe à 30 jours" }
+        },
+        {
+          "id": "b",
+          "label": { "en": "An early-deletion charge for the remaining 44 days of Coldline's 90-day minimum", "fr": "Des frais de suppression anticipée pour les 44 jours restants du minimum Coldline de 90 jours" }
+        },
+        {
+          "id": "c",
+          "label": { "en": "The cleanup job fails because Coldline objects can't be deleted before 90 days", "fr": "Le job de nettoyage échoue car les objets Coldline ne peuvent pas être supprimés avant 90 jours" }
+        },
+        {
+          "id": "d",
+          "label": { "en": "A refund, since the object was deleted before its full storage duration", "fr": "Un remboursement, puisque l'objet a été supprimé avant sa pleine durée de conservation" }
+        }
+      ],
+      "answerId": "b",
+      "explanation": {
+        "en": "The 90-day minimum applies from the moment the object entered Coldline (day 30), not from creation, and deletion is always allowed — it just doesn't waive the remaining committed days. Deleting at day 46 (16 days into Coldline) still bills the other 74 days as an early-deletion charge. There is no refund mechanism; minimum duration is a one-way commitment.",
+        "fr": "Le minimum de 90 jours s'applique depuis le moment où l'objet est entré en Coldline (jour 30), pas depuis la création, et la suppression est toujours autorisée — elle n'annule simplement pas les jours restants engagés. Une suppression au jour 46 (16 jours après l'entrée en Coldline) facture quand même les 74 jours restants en frais de suppression anticipée. Il n'y a aucun mécanisme de remboursement ; la durée minimale est un engagement à sens unique."
+      },
+      "difficulty": 2
+    },
+    {
+      "id": "ex-storage-uniform-access-mcq",
+      "kind": "mcq",
+      "prompt": {
+        "en": "A new project lead asks why every new bucket should default to uniform bucket-level access instead of legacy ACLs. Best answer?",
+        "fr": "Un nouveau chef de projet demande pourquoi tout nouveau bucket devrait par défaut utiliser l'accès uniforme plutôt que les ACL historiques. Meilleure réponse ?"
+      },
+      "choices": [
+        {
+          "id": "a",
+          "label": { "en": "ACLs are being fully removed from GCP next year", "fr": "Les ACL vont être totalement supprimées de GCP l'an prochain" }
+        },
+        {
+          "id": "b",
+          "label": { "en": "Uniform access makes IAM the single, auditable source of truth and prevents object-level ACLs from silently overriding bucket-level intent", "fr": "L'accès uniforme fait d'IAM la source de vérité unique et auditable, empêchant des ACL par objet de contredire silencieusement l'intention au niveau bucket" }
+        },
+        {
+          "id": "c",
+          "label": { "en": "Uniform access is required for CMEK to work", "fr": "L'accès uniforme est requis pour que CMEK fonctionne" }
+        },
+        {
+          "id": "d",
+          "label": { "en": "Uniform access makes objects automatically encrypted", "fr": "L'accès uniforme chiffre automatiquement les objets" }
+        }
+      ],
+      "answerId": "b",
+      "explanation": {
+        "en": "The real value is centralizing access control in IAM so grants are auditable through the same surface as the rest of the project, eliminating the classic case of a stray public ACL on one object inside an otherwise private bucket. ACLs aren't being removed, CMEK doesn't depend on it, and encryption at rest is on by default regardless of the access model.",
+        "fr": "La vraie valeur est de centraliser le contrôle d'accès dans IAM pour que les octrois soient auditables via la même surface que le reste du projet, éliminant le cas classique d'une ACL publique égarée sur un objet dans un bucket par ailleurs privé. Les ACL ne sont pas supprimées, CMEK n'en dépend pas, et le chiffrement au repos est actif par défaut quel que soit le modèle d'accès."
+      },
+      "difficulty": 1
+    },
+    {
+      "id": "ex-storage-public-access-bug",
+      "kind": "find-bug",
+      "prompt": {
+        "en": "Security review flags that gs://my-app-uploads is publicly readable, despite the team enabling uniform bucket-level access believing that made it private. Find the bug in their reasoning/config.",
+        "fr": "La revue sécurité signale que gs://my-app-uploads est lisible publiquement, alors que l'équipe pensait que l'accès uniforme suffisait à le rendre privé. Trouvez le bug dans leur raisonnement/config."
+      },
+      "code": "gcloud storage buckets update gs://my-app-uploads \\\n  --uniform-bucket-level-access\n\ngcloud storage buckets add-iam-policy-binding gs://my-app-uploads \\\n  --member=allUsers \\\n  --role=roles/storage.objectViewer\n# (public access prevention was never configured)",
+      "choices": [
+        {
+          "id": "a",
+          "label": { "en": "Uniform bucket-level access doesn't fully take effect for 90 days", "fr": "L'accès uniforme ne prend pleinement effet qu'après 90 jours" }
+        },
+        {
+          "id": "b",
+          "label": { "en": "Uniform access only means IAM is the sole authority — it doesn't forbid an allUsers grant; public access prevention was never enabled to actually block that", "fr": "L'accès uniforme signifie seulement qu'IAM fait autorité seul — il n'interdit pas un octroi à allUsers ; la prévention de l'accès public n'a jamais été activée pour réellement le bloquer" }
+        },
+        {
+          "id": "c",
+          "label": { "en": "objectViewer always implies public read regardless of the member", "fr": "objectViewer implique toujours une lecture publique quel que soit le membre" }
+        },
+        {
+          "id": "d",
+          "label": { "en": "allUsers bindings are ignored when uniform access is on", "fr": "Les bindings allUsers sont ignorés quand l'accès uniforme est actif" }
+        }
+      ],
+      "answerId": "b",
+      "explanation": {
+        "en": "Uniform bucket-level access only centralizes control in IAM; it says nothing about which grants are allowed, and granting objectViewer to allUsers makes every object in the bucket world-readable. The only setting that actually forbids this is public access prevention, which the team never turned on — a common conflation of \"uniform\" with \"private\".",
+        "fr": "L'accès uniforme centralise seulement le contrôle dans IAM ; il ne dit rien sur les octrois autorisés, et accorder objectViewer à allUsers rend chaque objet du bucket lisible par tous. Seule la prévention de l'accès public l'interdit réellement, et l'équipe ne l'a jamais activée — une confusion courante entre « uniforme » et « privé »."
+      },
+      "difficulty": 3
+    },
+    {
+      "id": "ex-storage-pd-resize-bug",
+      "kind": "find-bug",
+      "prompt": {
+        "en": "An engineer resizes a persistent disk to fix a full-disk alert. gcloud reports success, but the application still crashes with \"no space left on device\" minutes later. Find the bug.",
+        "fr": "Un ingénieur redimensionne un disque persistant pour corriger une alerte de disque plein. gcloud confirme le succès, mais l'application replante quelques minutes plus tard avec « no space left on device ». Trouvez le bug."
+      },
+      "code": "gcloud compute disks resize api-data-disk \\\n  --zone=europe-west1-b \\\n  --size=500GB\n# engineer then restarts the application, no other commands run",
+      "choices": [
+        {
+          "id": "a",
+          "label": { "en": "500GB is below the maximum size and the resize silently failed", "fr": "500 Go est en-dessous de la taille maximale et le resize a échoué silencieusement" }
+        },
+        {
+          "id": "b",
+          "label": { "en": "The block device grew but the filesystem was never extended (growpart/resize2fs, or equivalent) to use the new space", "fr": "Le périphérique bloc a grandi mais le système de fichiers n'a jamais été étendu (growpart/resize2fs, ou équivalent) pour utiliser le nouvel espace" }
+        },
+        {
+          "id": "c",
+          "label": { "en": "The VM must be stopped for a disk resize to take effect", "fr": "La VM doit être arrêtée pour que le resize du disque prenne effet" }
+        },
+        {
+          "id": "d",
+          "label": { "en": "pd disks require a snapshot before resizing", "fr": "Les disques pd exigent un snapshot avant redimensionnement" }
+        }
+      ],
+      "answerId": "b",
+      "explanation": {
+        "en": "gcloud disks resize only grows the underlying block device; the OS filesystem keeps believing it has the old size until it's explicitly extended (growpart + resize2fs on Linux, or the Windows Disk Management equivalent). Resizing is online and doesn't require stopping the VM, and no snapshot is required — the missing step is purely the filesystem-level extend.",
+        "fr": "gcloud disks resize n'agrandit que le périphérique bloc sous-jacent ; le système de fichiers de l'OS continue de croire à l'ancienne taille tant qu'il n'est pas explicitement étendu (growpart + resize2fs sous Linux, ou l'équivalent Windows). Le redimensionnement se fait à chaud et n'exige pas d'arrêter la VM, ni de snapshot — l'étape manquante est purement l'extension au niveau du système de fichiers."
+      },
+      "difficulty": 2
+    },
+    {
+      "id": "ex-storage-regional-pd-mcq",
+      "kind": "mcq",
+      "prompt": {
+        "en": "A team runs a self-managed PostgreSQL instance on a single Compute Engine VM and wants it to survive a zone outage without adopting Cloud SQL. What's the right disk choice, and the trade-off they're accepting?",
+        "fr": "Une équipe fait tourner une instance PostgreSQL auto-gérée sur une seule VM Compute Engine et veut qu'elle survive à une panne de zone sans adopter Cloud SQL. Quel choix de disque, et quel compromis accepte-t-elle ?"
+      },
+      "choices": [
+        {
+          "id": "a",
+          "label": { "en": "A zonal pd-ssd disk, snapshotted hourly", "fr": "Un disque pd-ssd zonal, snapshoté toutes les heures" }
+        },
+        {
+          "id": "b",
+          "label": { "en": "A regional persistent disk, accepting roughly double the cost and a write-latency tax from synchronous cross-zone replication", "fr": "Un disque persistant régional, en acceptant environ le double du coût et une pénalité de latence d'écriture due à la réplication synchrone inter-zone" }
+        },
+        {
+          "id": "c",
+          "label": { "en": "pd-extreme, since its IOPS are provisioned independently of size", "fr": "pd-extreme, car ses IOPS sont provisionnées indépendamment de la taille" }
+        },
+        {
+          "id": "d",
+          "label": { "en": "Filestore Enterprise, mounted as the database's data directory", "fr": "Filestore Enterprise, monté comme répertoire de données de la base" }
+        }
+      ],
+      "answerId": "b",
+      "explanation": {
+        "en": "Only a regional PD gives synchronous replication across two zones so the disk itself survives a zone outage; a zonal disk with hourly snapshots still loses up to an hour of data and requires manual recovery. The accepted trade-off is real: roughly double the cost and a write-latency tax from synchronous replication. pd-extreme addresses IOPS, not zone resilience, and Filestore is a shared NFS filesystem, not the right fit for a single database's block storage.",
+        "fr": "Seul un PD régional offre une réplication synchrone sur deux zones permettant au disque lui-même de survivre à une panne de zone ; un disque zonal snapshoté à l'heure perd tout de même jusqu'à une heure de données et exige une reprise manuelle. Le compromis accepté est réel : environ le double du coût et une pénalité de latence d'écriture due à la réplication synchrone. pd-extreme traite les IOPS, pas la résilience de zone, et Filestore est un système de fichiers NFS partagé, pas adapté au stockage bloc d'une seule base."
+      },
+      "difficulty": 2
+    },
+    {
+      "id": "ex-storage-filestore-vs-gcs-mcq",
+      "kind": "mcq",
+      "prompt": {
+        "en": "A legacy on-prem application is being lifted into GCP unchanged. It expects a mounted network drive with real file locking, shared by three application servers reading and writing the same files concurrently. What's the right storage pick?",
+        "fr": "Une application legacy on-prem est déplacée vers GCP sans modification. Elle attend un lecteur réseau monté avec un vrai verrouillage de fichiers, partagé par trois serveurs applicatifs lisant et écrivant les mêmes fichiers en même temps. Quel choix de stockage ?"
+      },
+      "choices": [
+        {
+          "id": "a",
+          "label": { "en": "Cloud Storage, mounted with Cloud Storage FUSE on all three servers", "fr": "Cloud Storage, monté avec Cloud Storage FUSE sur les trois serveurs" }
+        },
+        {
+          "id": "b",
+          "label": { "en": "Filestore, mounted via NFS on all three servers", "fr": "Filestore, monté en NFS sur les trois serveurs" }
+        },
+        {
+          "id": "c",
+          "label": { "en": "A regional persistent disk shared across the three VMs", "fr": "Un disque persistant régional partagé entre les trois VM" }
+        },
+        {
+          "id": "d",
+          "label": { "en": "Three separate zonal persistent disks, one per server, synced by a cron job", "fr": "Trois disques persistants zonaux séparés, un par serveur, synchronisés par un cron job" }
+        }
+      ],
+      "answerId": "b",
+      "explanation": {
+        "en": "Filestore is exactly this: managed NFS with real POSIX semantics including file locking, mountable concurrently by multiple VMs — the standard lift-and-shift target for legacy shared-filesystem apps. FUSE lacks real locking and would corrupt data under concurrent read-modify-write. A persistent disk (regional or otherwise) attaches to a limited number of VMs at best and isn't designed as a general shared filesystem; syncing separate disks via cron introduces consistency lag the app isn't built to tolerate.",
+        "fr": "Filestore est exactement cela : du NFS managé avec une vraie sémantique POSIX incluant le verrouillage de fichiers, montable simultanément par plusieurs VM — la cible standard de lift-and-shift pour les applis legacy à filesystem partagé. FUSE n'a pas de vrai verrouillage et corromprait les données en lecture-modification-écriture concurrente. Un disque persistant (régional ou non) s'attache au mieux à un nombre limité de VM et n'est pas conçu comme un filesystem partagé général ; synchroniser des disques séparés par cron introduit un décalage de cohérence que l'appli ne tolère pas."
+      },
+      "difficulty": 2
+    },
+    {
+      "id": "ex-storage-bucket-lock-predict",
+      "kind": "predict-output",
+      "prompt": {
+        "en": "A compliance retention policy of 7 years was applied and locked on gs://compliance-records six months ago. An engineer, under pressure to free up space, runs the command below on an object that is 6 months old. What happens?",
+        "fr": "Une politique de rétention de conformité de 7 ans a été appliquée et verrouillée sur gs://compliance-records il y a six mois. Sous pression pour libérer de l'espace, un ingénieur exécute la commande ci-dessous sur un objet vieux de 6 mois. Que se passe-t-il ?"
+      },
+      "code": "gcloud storage rm gs://compliance-records/audit-2026-01.csv",
+      "choices": [
+        {
+          "id": "a",
+          "label": { "en": "The object is deleted, since the engineer has project owner rights", "fr": "L'objet est supprimé, l'ingénieur ayant les droits de propriétaire du projet" }
+        },
+        {
+          "id": "b",
+          "label": { "en": "The command fails: bucket lock makes the retention period unshortenable and unbypassable by anyone, including the project owner, until it expires", "fr": "La commande échoue : le bucket lock rend la période de rétention impossible à raccourcir ou contourner par quiconque, y compris le propriétaire du projet, jusqu'à son expiration" }
+        },
+        {
+          "id": "c",
+          "label": { "en": "The object is moved to a hidden trash bucket for 30 days, then deleted", "fr": "L'objet est déplacé vers un bucket poubelle caché pendant 30 jours, puis supprimé" }
+        },
+        {
+          "id": "d",
+          "label": { "en": "The deletion succeeds but triggers a billing penalty equal to the remaining retention cost", "fr": "La suppression réussit mais déclenche une pénalité de facturation égale au coût de rétention restant" }
+        }
+      ],
+      "answerId": "b",
+      "explanation": {
+        "en": "Bucket lock is a genuinely one-way door: once a retention policy is locked, the protected objects cannot be deleted or have their retention shortened by anyone before the period expires — that includes project owners and org admins. This is by design for regulatory compliance (e.g. financial records), and it's exactly why locking should only ever be done after a rehearsal on a throwaway bucket and a change-control sign-off.",
+        "fr": "Le bucket lock est une porte réellement à sens unique : une fois une politique de rétention verrouillée, les objets protégés ne peuvent être supprimés ni voir leur rétention raccourcie par personne avant l'expiration de la période — y compris les propriétaires de projet et administrateurs d'organisation. C'est voulu pour la conformité réglementaire (dossiers financiers, par exemple), et c'est exactement pourquoi le verrouillage ne doit se faire qu'après une répétition sur un bucket jetable et une validation de change-control."
+      },
+      "difficulty": 3
+    }
+  ]
+}

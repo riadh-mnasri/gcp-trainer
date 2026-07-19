@@ -2,6 +2,8 @@
   "name": "gcp-trainer",
   "version": "0.1.0",
   "private": true,
+  "author": "Riadh MNASRI",
+  "license": "UNLICENSED",
   "scripts": {
     "dev": "next dev -p 3838",
     "build": "next build",
